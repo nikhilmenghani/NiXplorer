@@ -1,5 +1,6 @@
 package com.nixplorer.screen.main
 
+import com.nixplorer.BuildConfig
 import android.content.Context
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
@@ -429,7 +430,9 @@ class MainActivityManager {
 
     fun checkForUpdate() {
         fetchGithubReleases { releases ->
-            val latestRelease = releases.firstOrNull() ?: return@fetchGithubReleases
+            val latestRelease = releases.firstOrNull {
+                it.prerelease == BuildConfig.INCLUDE_PRERELEASE_UPDATES
+            } ?: return@fetchGithubReleases
             val latestVersionName = latestRelease.tagName
 
             try {
@@ -471,9 +474,11 @@ class MainActivityManager {
     }
 
     private fun parseVersion(versionName: String): List<Int> {
-        return versionName.removePrefix("v")
-            .split(".")
-            .map { it.toIntOrNull() ?: 0 } // Use toIntOrNull for safety
+        val match = Regex("^v?(\\d+)\\.(\\d+)\\.(\\d+)(?:-dev\\.(\\d+))?$")
+            .matchEntire(versionName) ?: return emptyList()
+        val parts = match.groupValues
+        val prereleaseSequence = parts[4].toIntOrNull() ?: Int.MAX_VALUE
+        return listOf(parts[1].toInt(), parts[2].toInt(), parts[3].toInt(), prereleaseSequence)
     }
 
     fun fetchGithubReleases(

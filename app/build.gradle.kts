@@ -5,6 +5,37 @@ plugins {
     alias(libs.plugins.baselineprofile)
 }
 
+data class AppVersion(val name: String, val code: Int)
+
+fun readVersion(fileName: String, expectedName: Regex): AppVersion {
+    val versionFile = rootProject.file(fileName)
+    require(versionFile.isFile) { "Missing $fileName" }
+    val values = versionFile.readLines().map(String::trim)
+        .filter { it.isNotEmpty() && !it.startsWith("#") }
+        .associate { line ->
+            val parts = line.split("=", limit = 2)
+            require(parts.size == 2) { "Malformed line in $fileName: $line" }
+            parts[0].trim() to parts[1].trim()
+        }
+    require(values.keys == setOf("versionName", "versionCode")) { "$fileName must contain only versionName and versionCode" }
+    val name = requireNotNull(values["versionName"])
+    require(expectedName.matches(name)) { "Malformed versionName in $fileName: $name" }
+    val code = requireNotNull(values["versionCode"]).toIntOrNull()
+    require(code != null && code > 0) { "versionCode in $fileName must be a positive integer" }
+    return AppVersion(name, code)
+}
+
+val stableVersion = readVersion("release.txt", Regex("[0-9]+\\.[0-9]+\\.[0-9]+"))
+val devVersion = readVersion("dev.txt", Regex("[0-9]+\\.[0-9]+\\.[0-9]+-dev\\.[1-9][0-9]*"))
+require(stableVersion.code != devVersion.code) { "Version codes must be unique across dev and stable" }
+
+val publishingStoreFile = providers.gradleProperty("releaseStoreFile").orNull
+val publishingStorePassword = providers.gradleProperty("releaseStorePassword").orNull
+val publishingKeyAlias = providers.gradleProperty("releaseKeyAlias").orNull
+val publishingKeyPassword = providers.gradleProperty("releaseKeyPassword").orNull
+val hasPublishingSigning = listOf(publishingStoreFile, publishingStorePassword, publishingKeyAlias, publishingKeyPassword)
+    .all { !it.isNullOrBlank() }
+
 android {
     namespace = "com.nixplorer"
     compileSdk = 36
@@ -13,8 +44,22 @@ android {
         applicationId = "com.nixplorer"
         minSdk = 26
         targetSdk = 36
-        versionCode = 10
-        versionName = "1.3.2"
+        versionCode = stableVersion.code
+        versionName = stableVersion.name
+        manifestPlaceholders["appLabel"] = "@string/app_name"
+    }
+
+    buildFeatures { buildConfig = true }
+
+    signingConfigs {
+        if (hasPublishingSigning) {
+            create("publishing") {
+                storeFile = rootProject.file(requireNotNull(publishingStoreFile))
+                storePassword = publishingStorePassword
+                keyAlias = publishingKeyAlias
+                keyPassword = publishingKeyPassword
+            }
+        }
     }
 
     dependenciesInfo {
@@ -23,12 +68,22 @@ android {
     }
 
     buildTypes {
+        debug {
+            applicationIdSuffix = ".debug"
+            manifestPlaceholders["appLabel"] = "NiXplorer Dev"
+            buildConfigField("boolean", "INCLUDE_PRERELEASE_UPDATES", "true")
+            if (hasPublishingSigning && providers.gradleProperty("usePublishingSigning").orNull == "true") {
+                signingConfig = signingConfigs.getByName("publishing")
+            }
+        }
         release {
+            buildConfigField("boolean", "INCLUDE_PRERELEASE_UPDATES", "false")
             isMinifyEnabled = true
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
+            if (hasPublishingSigning) signingConfig = signingConfigs.getByName("publishing")
         }
     }
     compileOptions {
@@ -45,6 +100,15 @@ android {
 
     baselineProfile {
         dexLayoutOptimization = true
+    }
+}
+
+androidComponents {
+    onVariants(selector().withBuildType("debug")) { variant ->
+        variant.outputs.forEach { output ->
+            output.versionName.set(devVersion.name)
+            output.versionCode.set(devVersion.code)
+        }
     }
 }
 

@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 108 108" role="img" aria-labelledby="title">
+  <title id="title">NiXplorer folder icon</title>
+  <rect width="108" height="108" rx="24" fill="#10233f"/>
+  <path fill="#31c7f3" d="M24 36h20l7 7h33c2 0 3 2 3 4v29c0 3-1 4-4 4H25c-3 0-4-1-4-4V40c0-3 1-4 3-4z"/>
+  <path fill="#78e3ff" d="M21 49h66v27c0 3-1 4-4 4H25c-3 0-4-1-4-4z"/>
+  <path fill="#fff" d="M37 58h6l14 12V58h7v16h-6L44 62v12h-7zm32 0h4v4h-4z"/>
+</svg>
