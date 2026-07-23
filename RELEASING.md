@@ -15,7 +15,12 @@ Every new publication, regardless of channel, must use a `versionCode` greater t
 
 ## Publishing
 
-Pushes and pull requests run lint, unit tests, and a debug build without publishing. To publish, open **Actions → Android CI and release → Run workflow** and choose `dev` or `stable`.
+Pushes and pull requests run version validation, unit tests, and a debug build. A push to the repository's default branch automatically publishes when exactly one version file changes:
+
+- Change only `dev.txt` to publish a dev prerelease.
+- Change only `release.txt` to publish a stable release.
+
+Changing both version files in one push is rejected so the release channel is never ambiguous. Version-file changes on non-default branches and pull requests only verify; publication happens after the change reaches the default branch. Manual dispatch remains available under **Actions → Android CI and release → Run workflow** as a recovery option.
 
 - `dev` builds the debug application ID with persistent release signing and creates a GitHub prerelease.
 - `stable` builds the release variant with the existing stable application ID and creates a normal GitHub release.

@@ -2,6 +2,8 @@ name: Android CI and release
 
 on:
   push:
+    branches:
+      - '**'
   pull_request:
   workflow_dispatch:
     inputs:
@@ -21,6 +23,55 @@ concurrency:
   cancel-in-progress: ${{ github.event_name != 'workflow_dispatch' }}
 
 jobs:
+  release-channel:
+    name: Detect release channel
+    runs-on: ubuntu-latest
+    outputs:
+      channel: ${{ steps.detect.outputs.channel }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Detect version file changed on default branch
+        id: detect
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          MANUAL_CHANNEL: ${{ inputs.channel }}
+          CURRENT_REF: ${{ github.ref }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+          BEFORE_SHA: ${{ github.event.before }}
+          CURRENT_SHA: ${{ github.sha }}
+        run: |
+          CHANNEL=''
+          if [[ "$EVENT_NAME" == workflow_dispatch ]]; then
+            CHANNEL="$MANUAL_CHANNEL"
+          elif [[ "$EVENT_NAME" == push && "$CURRENT_REF" == "refs/heads/$DEFAULT_BRANCH" ]]; then
+            if [[ "$BEFORE_SHA" == 0000000000000000000000000000000000000000 ]]; then
+              CHANGED=$(git show --pretty='' --name-only "$CURRENT_SHA")
+            else
+              CHANGED=$(git diff --name-only "$BEFORE_SHA" "$CURRENT_SHA")
+            fi
+            DEV_CHANGED=false
+            STABLE_CHANGED=false
+            grep -Fxq 'dev.txt' <<< "$CHANGED" && DEV_CHANGED=true
+            grep -Fxq 'release.txt' <<< "$CHANGED" && STABLE_CHANGED=true
+            if [[ "$DEV_CHANGED" == true && "$STABLE_CHANGED" == true ]]; then
+              echo 'A single push cannot publish both dev and stable. Change one version file per push.' >&2
+              exit 1
+            elif [[ "$DEV_CHANGED" == true ]]; then
+              CHANNEL=dev
+            elif [[ "$STABLE_CHANGED" == true ]]; then
+              CHANNEL=stable
+            fi
+          fi
+          echo "channel=$CHANNEL" >> "$GITHUB_OUTPUT"
+          if [[ -n "$CHANNEL" ]]; then
+            echo "Publishing channel: $CHANNEL"
+          else
+            echo 'No release requested by this event.'
+          fi
+
   verify-debug:
     name: Verify debug build
     runs-on: ubuntu-latest
@@ -45,9 +96,11 @@ jobs:
           path: app/build/outputs/apk/debug/app-debug.apk
 
   publish:
-    name: Publish ${{ inputs.channel }} release
-    if: github.event_name == 'workflow_dispatch'
-    needs: verify-debug
+    name: Publish ${{ needs.release-channel.outputs.channel }} release
+    if: needs.release-channel.outputs.channel != ''
+    needs:
+      - release-channel
+      - verify-debug
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -67,7 +120,7 @@ jobs:
         id: release
         shell: bash
         env:
-          CHANNEL: ${{ inputs.channel }}
+          CHANNEL: ${{ needs.release-channel.outputs.channel }}
           GH_TOKEN: ${{ github.token }}
         run: |
           bash .github/scripts/validate-versions.sh
@@ -116,7 +169,7 @@ jobs:
         run: |
           test -n "$STORE_PASSWORD" && test -n "$KEY_ALIAS" && test -n "$KEY_PASSWORD"
           EXTRA=()
-          [[ '${{ inputs.channel }}' == dev ]] && EXTRA+=("-PusePublishingSigning=true")
+          [[ '${{ needs.release-channel.outputs.channel }}' == dev ]] && EXTRA+=("-PusePublishingSigning=true")
           ./gradlew --no-daemon '${{ steps.release.outputs.task }}' \
             -PreleaseStoreFile="$RUNNER_TEMP/nixplorer-release.jks" \
             -PreleaseStorePassword="$STORE_PASSWORD" \
