@@ -4,7 +4,13 @@ on:
   push:
     branches:
       - '**'
+    paths:
+      - 'dev.txt'
+      - 'release.txt'
   pull_request:
+    paths:
+      - 'dev.txt'
+      - 'release.txt'
   workflow_dispatch:
     inputs:
       channel:
