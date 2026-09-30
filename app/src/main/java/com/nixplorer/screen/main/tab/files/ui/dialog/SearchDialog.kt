@@ -112,6 +112,9 @@ fun SearchDialog(
         val context = LocalContext.current
         val useDarkIcons = !isSystemInDarkTheme()
         var showAdvancedOptions by remember { mutableStateOf(false) }
+        val searchLocation = if (tab.activeFolder is VirtualFileHolder)
+            tab.activeFolder.displayName else tab.activeFolder.uniquePath
+        var locationExpanded by remember(searchLocation) { mutableStateOf(false) }
 
         Dialog(
             onDismissRequest = onDismissRequest,
@@ -142,10 +145,17 @@ fun SearchDialog(
                 // Search Header
                 SearchHeader(
                     searchManager = searchManager,
-                    searchLocation = if (tab.activeFolder is VirtualFileHolder)
-                        tab.activeFolder.displayName else tab.activeFolder.uniquePath,
+                    searchLocation = searchLocation,
+                    locationExpanded = locationExpanded,
+                    onLocationToggle = { locationExpanded = !locationExpanded },
                     onBackClick = onDismissRequest,
-                    onSearchClick = { searchManager.startSearch(tab) },
+                    onSearchClick = {
+                        if (searchManager.searchQuery.isNotEmpty()) {
+                            showAdvancedOptions = false
+                            locationExpanded = false
+                        }
+                        searchManager.startSearch(tab)
+                    },
                     onAdvancedToggle = { showAdvancedOptions = !showAdvancedOptions }
                 )
 
@@ -190,6 +200,8 @@ fun SearchDialog(
 private fun SearchHeader(
     searchManager: SearchManager,
     searchLocation: String,
+    locationExpanded: Boolean,
+    onLocationToggle: () -> Unit,
     onBackClick: () -> Unit,
     onSearchClick: () -> Unit,
     onAdvancedToggle: () -> Unit
@@ -289,9 +301,8 @@ private fun SearchHeader(
         } else {
             searchLocation.split('/').filter { it.isNotEmpty() }
         }
-        var locationExpanded by remember(searchLocation) { mutableStateOf(false) }
         Surface(
-            onClick = { locationExpanded = !locationExpanded },
+            onClick = onLocationToggle,
             modifier = Modifier.fillMaxWidth().padding(start = 12.dp, end = 12.dp, bottom = 8.dp),
             shape = RoundedCornerShape(20.dp),
             color = MaterialTheme.colorScheme.surfaceContainerLow
@@ -413,6 +424,14 @@ private fun AdvancedOptionsPanel(
                 icon = Icons.Rounded.Code
             )
         }
+
+        Space(size = 8.dp)
+
+        Text(
+            text = stringResource(if (options.useRegex) R.string.search_regex_hint else R.string.search_wildcard_hint),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
 
         Space(size = 8.dp)
 

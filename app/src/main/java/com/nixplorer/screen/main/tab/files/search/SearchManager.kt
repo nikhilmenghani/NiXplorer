@@ -26,6 +26,7 @@ import java.io.BufferedReader
 import java.io.FileReader
 import java.util.concurrent.ConcurrentLinkedQueue
 import java.util.regex.Pattern
+import java.util.regex.PatternSyntaxException
 
 class SearchManager {
     var searchQuery by mutableStateOf(emptyString)
@@ -76,17 +77,9 @@ class SearchManager {
 
         searchJob = tab.scope.launch {
             try {
-                val searchPattern = if (searchOptions.useRegex) {
-                    try {
-                        Pattern.compile(
-                            searchQuery,
-                            if (searchOptions.ignoreCase) Pattern.CASE_INSENSITIVE else 0
-                        )
-                    } catch (_: Exception) {
-                        // Invalid regex, fall back to literal search
-                        null
-                    }
-                } else null
+                val searchPattern = compileSearchPattern(
+                    searchQuery, searchOptions.useRegex, searchOptions.ignoreCase
+                )
 
                 if (tab.activeFolder is VirtualFileHolder) {
                     searchInList(tab.activeFolderContent, searchPattern)
@@ -98,6 +91,8 @@ class SearchManager {
                 internalProgress = 1f
                 updateUiState() // Final update
                 flushPendingResults() // Flush any remaining results
+            } catch (_: PatternSyntaxException) {
+                globalClass.showMsg(globalClass.getString(R.string.invalid_search_regex))
             } catch (_: CancellationException) {
                 // Search was cancelled
             } catch (e: Exception) {

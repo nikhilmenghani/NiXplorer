@@ -461,4 +461,7 @@
     <string name="search_location_label">Search location</string>
     <string name="expand_search_location">Show full path</string>
     <string name="collapse_search_location">Collapse path</string>
+    <string name="search_wildcard_hint">Wildcards: *.apk for all APKs, N*.apk for names starting with N. ? matches one character.</string>
+    <string name="search_regex_hint">Regex example: .*\\.apk$ for APK files. Turn off Use Regex to use *.apk.</string>
+    <string name="invalid_search_regex">Invalid regular expression. For *.apk wildcard search, turn off Use Regex.</string>
 </resources>
