@@ -1,7 +1,7 @@
 package com.nixplorer.screen.preferences.constant
 
 import com.nixplorer.App.Companion.globalClass
-import com.nixplorer.screen.main.tab.files.holder.ContentHolder
+
 
 object FileItemSizeMap {
     object IconSize {
@@ -20,18 +20,12 @@ object FileItemSizeMap {
         const val EXTRA_LARGE = 22
     }
 
-    fun getFileListSpace(contentHolder: ContentHolder? = null) = when (
-        if (contentHolder == null) globalClass.preferencesManager.itemSize
-        else globalClass.preferencesManager.getViewConfigPrefsFor(contentHolder).itemSize
-    ) {
+    fun getFileListSpace(itemSize: Int = globalClass.preferencesManager.itemSize) = when (itemSize) {
         FileItemSize.LARGE.ordinal, FileItemSize.EXTRA_LARGE.ordinal -> 8
         else -> 4
     }
 
-    fun getFileListIconSize(contentHolder: ContentHolder? = null) = when (
-        if (contentHolder == null) globalClass.preferencesManager.itemSize
-        else globalClass.preferencesManager.getViewConfigPrefsFor(contentHolder).itemSize
-    ) {
+    fun getFileListIconSize(itemSize: Int = globalClass.preferencesManager.itemSize) = when (itemSize) {
         FileItemSize.EXTRA_SMALL.ordinal -> IconSize.EXTRA_SMALL
         FileItemSize.SMALL.ordinal -> IconSize.SMALL
         FileItemSize.MEDIUM.ordinal -> IconSize.MEDIUM
@@ -39,10 +33,7 @@ object FileItemSizeMap {
         else -> IconSize.EXTRA_LARGE
     }
 
-    fun getFileListFontSize(contentHolder: ContentHolder? = null) = when (
-        if (contentHolder == null) globalClass.preferencesManager.itemSize
-        else globalClass.preferencesManager.getViewConfigPrefsFor(contentHolder).itemSize
-    ) {
+    fun getFileListFontSize(itemSize: Int = globalClass.preferencesManager.itemSize) = when (itemSize) {
         FileItemSize.EXTRA_SMALL.ordinal -> FontSize.EXTRA_SMALL
         FileItemSize.SMALL.ordinal -> FontSize.SMALL
         FileItemSize.MEDIUM.ordinal -> FontSize.MEDIUM

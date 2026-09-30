@@ -147,6 +147,12 @@ class PreferencesManager {
         getPreferencesKey = { stringSetPreferencesKey(it) }
     )
 
+    var showRecentFiles by prefMutableState(
+        keyName = "showRecentFiles",
+        defaultValue = false,
+        getPreferencesKey = { booleanPreferencesKey(it) }
+    )
+
     var excludedPathsFromRecentFiles by prefMutableState(
         keyName = "excludedPathFromRecentFiles",
         defaultValue = emptySet(),

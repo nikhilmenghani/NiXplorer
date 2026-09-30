@@ -453,4 +453,8 @@
     <string name="close_tab_on_back_nav">Back navigation to close tabs</string>
     <string name="remember_last_session">Remember last session</string>
     <string name="confirm_before_exit">Confirm before exiting the app</string>
+    <string name="show_recent_files">Show Recent Files</string>
+    <string name="show_recent_files_description">Show recently modified files on the home screen</string>
+    <string name="duplicate_tab">Duplicate tab</string>
+    <string name="reorder_tab">Hold and drag to reorder tab</string>
 </resources>

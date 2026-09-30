@@ -91,12 +91,10 @@ fun ColumnScope.HomeTabContentView(tab: HomeTab) {
     val mainActivityManager = globalClass.mainActivityManager
     val scope = rememberCoroutineScope()
     val enabledSections = remember { mutableStateListOf<HomeSectionConfig>() }
+    val showRecentFiles = globalClass.preferencesManager.showRecentFiles
 
     LaunchedEffect(tab.id) {
         withContext(Dispatchers.IO) {
-            async {
-                tab.fetchRecentFiles()
-            }
             async {
                 tab.getPinnedFiles()
             }
@@ -113,6 +111,14 @@ fun ColumnScope.HomeTabContentView(tab: HomeTab) {
 
                 enabledSections.addAll(config)
             }
+        }
+    }
+
+    val recentFilesEnabled = showRecentFiles &&
+        enabledSections.any { it.type == HomeSectionType.RECENT_FILES }
+    LaunchedEffect(tab.id, recentFilesEnabled) {
+        if (recentFilesEnabled) {
+            tab.fetchRecentFiles()
         }
     }
 
@@ -161,7 +167,7 @@ fun ColumnScope.HomeTabContentView(tab: HomeTab) {
             .verticalScroll(rememberScrollState()),
         verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        enabledSections.forEach { section ->
+        enabledSections.filter { showRecentFiles || it.type != HomeSectionType.RECENT_FILES }.forEach { section ->
             when (section.type) {
                 HomeSectionType.RECENT_FILES -> {
                     RecentFilesSection(tab = tab, mainActivityManager = mainActivityManager)

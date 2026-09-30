@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.LazyRow
@@ -19,6 +20,8 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.DragHandle
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
@@ -183,6 +186,10 @@ fun TabLayout(
                                 .combinedClickable(
                                     indication = null,
                                     interactionSource = remember { MutableInteractionSource() },
+                                    onLongClick = {
+                                        mainActivityManager.selectTabAt(index)
+                                        showTabHeaderMenu = true
+                                    },
                                     onClick = {
                                         if (!isSelected) {
                                             mainActivityManager.selectTabAt(index)
@@ -191,8 +198,7 @@ fun TabLayout(
                                         }
                                     }
                                 )
-                                .padding(horizontal = 20.dp)
-                                .longPressDraggableHandle()
+                                .padding(start = 16.dp, end = if (tabs.size > 1) 4.dp else 16.dp)
                                 .detectVerticalSwipe(
                                     onSwipeDown = {
                                         mainActivityManager.removeTabAt(index)
@@ -201,12 +207,41 @@ fun TabLayout(
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.Center
                         ) {
+                            if (tabs.size > 1) {
+                                Icon(
+                                    imageVector = Icons.Rounded.DragHandle,
+                                    contentDescription = stringResource(R.string.reorder_tab),
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.size(24.dp).longPressDraggableHandle()
+                                )
+                                Space(4.dp)
+                            }
                             Text(
                                 modifier = Modifier.alpha(alphaAnim.value),
                                 text = tab.header,
                                 fontSize = 14.sp,
                                 color = textColorAnim.value
                             )
+                            if (tabs.size > 1) {
+                                IconButton(
+                                    modifier = Modifier.size(40.dp),
+                                    enabled = draggedItem == -1,
+                                    onClick = {
+                                        val currentIndex = mainActivityManager.state.value.tabs
+                                            .indexOfFirst { it.id == tab.id }
+                                        if (currentIndex >= 0) {
+                                            mainActivityManager.removeTabAt(currentIndex)
+                                        }
+                                    }
+                                ) {
+                                    Icon(
+                                        modifier = Modifier.size(24.dp),
+                                        imageVector = Icons.Rounded.Close,
+                                        contentDescription = stringResource(R.string.close),
+                                        tint = MaterialTheme.colorScheme.onSurface
+                                    )
+                                }
+                            }
                             if (showTabHeaderMenu) {
                                 OptionsMenu(
                                     tab = tab,
@@ -241,6 +276,23 @@ fun OptionsMenu(
         onDismissRequest = onDismiss,
         containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
     ) {
+        val manager = globalClass.mainActivityManager
+        DropdownMenuItem(
+            text = { Text(stringResource(R.string.duplicate_tab)) },
+            onClick = {
+                onDismiss()
+                manager.duplicateTab(tab.id)
+            }
+        )
+        DropdownMenuItem(
+            text = { Text(stringResource(R.string.close)) },
+            enabled = manager.state.value.tabs.size > 1,
+            onClick = {
+                onDismiss()
+                val currentIndex = manager.state.value.tabs.indexOfFirst { it.id == tab.id }
+                if (currentIndex >= 0) manager.removeTabAt(currentIndex)
+            }
+        )
         // get startup tabs
         val startupTabs = remember {
             arrayListOf<StartupTab>().apply {
@@ -323,17 +375,7 @@ fun OptionsMenu(
             }
         }
 
-        if (index > 0) {
-            DropdownMenuItem(
-                text = { Text(text = stringResource(R.string.close)) },
-                onClick = {
-                    globalClass.mainActivityManager.removeTabAt(index)
-                    onDismiss()
-                }
-            )
-        }
-
-        DropdownMenuItem(
+DropdownMenuItem(
             text = { Text(text = stringResource(R.string.close_others)) },
             onClick = {
                 globalClass.mainActivityManager.removeOtherTabs(index)

@@ -63,7 +63,7 @@ class HomeTab : Tab() {
     }
 
     fun fetchRecentFiles() {
-        if (recentFiles.isNotEmpty()) return
+        if (!globalClass.preferencesManager.showRecentFiles || recentFiles.isNotEmpty()) return
 
         scope.launch {
             recentFiles.addAll(getRecentFiles())

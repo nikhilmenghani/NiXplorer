@@ -304,7 +304,7 @@ private fun ColumnFileItem(
                 }
             )
     ) {
-        Space(size = getFileListSpace(tab.activeFolder).dp)
+        Space(size = getFileListSpace(viewConfigs.itemSize).dp)
 
         Row(
             Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
@@ -312,7 +312,7 @@ private fun ColumnFileItem(
         ) {
             FileIcon(
                 item = item,
-                size = getFileListIconSize(tab.activeFolder).dp,
+                size = getFileListIconSize(viewConfigs.itemSize).dp,
                 viewConfigs = viewConfigs,
                 onClick = { toggleSelection() },
                 onLongClick = { handleLongClick(tab, currentItemPath, item, index) }
@@ -321,7 +321,7 @@ private fun ColumnFileItem(
             Space(size = 8.dp)
 
             Column(Modifier.weight(1f)) {
-                val fontSize = getFileListFontSize(tab.activeFolder)
+                val fontSize = getFileListFontSize(viewConfigs.itemSize)
 
                 Text(
                     text = item.displayName,
@@ -345,7 +345,7 @@ private fun ColumnFileItem(
             }
         }
 
-        Space(size = getFileListSpace(tab.activeFolder).dp)
+        Space(size = getFileListSpace(viewConfigs.itemSize).dp)
 
         HorizontalDivider(
             modifier = Modifier.padding(start = 56.dp),
@@ -425,7 +425,7 @@ private fun GridFileItem(
             ) {
                 FileIcon(
                     item = item,
-                    size = (getFileListIconSize(tab.activeFolder) * 1.5).dp,
+                    size = (getFileListIconSize(viewConfigs.itemSize) * 1.5).dp,
                     onClick = {
                         if (tab.selectedFiles.isNotEmpty()) {
                             toggleSelection()
@@ -469,7 +469,7 @@ private fun GridFileItem(
                             )
                             .padding(4.dp)
                     ) {
-                        val fontSize = getFileListFontSize(tab.activeFolder) * 0.8
+                        val fontSize = getFileListFontSize(viewConfigs.itemSize) * 0.8
                         Text(
                             text = item.displayName,
                             fontSize = fontSize.sp,
@@ -490,7 +490,7 @@ private fun GridFileItem(
             }
             if (!viewConfigs.galleryMode) {
                 Spacer(modifier = Modifier.height(4.dp))
-                val fontSize = getFileListFontSize(tab.activeFolder) * 0.8
+                val fontSize = getFileListFontSize(viewConfigs.itemSize) * 0.8
                 Text(
                     text = item.displayName,
                     fontSize = fontSize.sp,
@@ -627,7 +627,7 @@ private fun FileDetailsCompact(
             key2 = item.lastModified
         ) {
             if (details.isEmpty()) {
-                val det = item.getDetails()
+                val det = withContext(IO) { item.getDetails() }
                 withContext(Dispatchers.Main) { details = det }
             }
         }

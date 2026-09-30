@@ -239,6 +239,18 @@ fun RecentFilesContainer() {
 
     Container(title = stringResource(R.string.recent_files)) {
         PreferenceItem(
+            label = stringResource(R.string.show_recent_files),
+            supportingText = stringResource(R.string.show_recent_files_description),
+            icon = Icons.AutoMirrored.Rounded.ManageSearch,
+            switchState = prefs.showRecentFiles,
+            onSwitchChange = { prefs.showRecentFiles = it }
+        )
+
+        HorizontalDivider(
+            color = MaterialTheme.colorScheme.surfaceContainerLow,
+            thickness = 3.dp
+        )
+        PreferenceItem(
             label = stringResource(R.string.extensive_recent_files_scan),
             supportingText = stringResource(R.string.scan_hidden_files_and_folders),
             icon = Icons.AutoMirrored.Rounded.ManageSearch,

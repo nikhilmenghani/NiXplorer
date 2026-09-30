@@ -22,6 +22,8 @@ import com.nixplorer.screen.main.tab.Tab
 import com.nixplorer.screen.main.tab.apps.AppsTab
 import com.nixplorer.screen.main.tab.files.FilesTab
 import com.nixplorer.screen.main.tab.files.holder.LocalFileHolder
+import com.nixplorer.screen.main.tab.files.holder.VirtualFileHolder
+import com.nixplorer.screen.main.tab.files.holder.ZipFileHolder
 import com.nixplorer.screen.main.tab.files.provider.StorageProvider
 import com.nixplorer.screen.main.tab.home.HomeTab
 import kotlinx.coroutines.CoroutineScope
@@ -128,6 +130,28 @@ class MainActivityManager {
                 newSelectedTab.onTabStarted()
             }
         }
+    }
+
+    fun duplicateTab(tabId: Int) {
+        val original = _state.value.tabs.firstOrNull { it.id == tabId } ?: return
+        val duplicate = when (original) {
+            is HomeTab -> HomeTab()
+            is AppsTab -> AppsTab().apply {
+                selectedChoice = original.selectedChoice
+                sortOption = original.sortOption
+            }
+            is FilesTab -> {
+                val folder = when (val active = original.activeFolder) {
+                    is LocalFileHolder -> LocalFileHolder(active.file)
+                    is VirtualFileHolder -> VirtualFileHolder(active.type)
+                    is ZipFileHolder -> ZipFileHolder(active.zipTree, active.node)
+                    else -> active
+                }
+                FilesTab(folder).apply { viewConfig = original.viewConfig.copy() }
+            }
+            else -> return
+        }
+        addTabAndSelect(duplicate)
     }
 
     fun addTabAndSelect(tab: Tab, index: Int = -1) {
