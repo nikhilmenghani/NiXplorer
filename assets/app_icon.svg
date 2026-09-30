@@ -1,7 +1,5 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 108 108" role="img" aria-labelledby="title">
-  <title id="title">NiXplorer folder icon</title>
-  <rect width="108" height="108" rx="24" fill="#10233f"/>
-  <path fill="#31c7f3" d="M24 36h20l7 7h33c2 0 3 2 3 4v29c0 3-1 4-4 4H25c-3 0-4-1-4-4V40c0-3 1-4 3-4z"/>
-  <path fill="#78e3ff" d="M21 49h66v27c0 3-1 4-4 4H25c-3 0-4-1-4-4z"/>
-  <path fill="#fff" d="M37 58h6l14 12V58h7v16h-6L44 62v12h-7zm32 0h4v4h-4z"/>
-</svg>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 108 108" role="img" aria-labelledby="title"><title id="title">NiXplorer folder N logo</title><rect width="108" height="108" rx="24" fill="#FAFAF7"/><g transform="translate(16.2 16.2) scale(0.7)"><path fill="#FFBE32" d="M24,39 L24,36 Q24,29 31,29 L44,29 Q48,29 50,33 L55,39 L44,39 Q42,37 38,37 L30,37 Q26,37 24,39 Z"/>
+<path fill="#2085F5" d="M30,38 L36,38 Q42,38 42,44 L42,73 Q42,79 36,79 L30,79 Q24,79 24,73 L24,44 Q24,38 30,38 Z"/>
+<path fill="#2085F5" d="M72,38 L78,38 Q84,38 84,44 L84,72 Q84,75 83,76 L66,54 L66,44 Q66,38 72,38 Z"/>
+<path fill="#1DBBB4" d="M43,40 L51,40 Q54,40 57,44 L80,73 Q83,79 76,79 L65,79 Q61,79 58,75 L43,57 Z"/></g></svg>
+
