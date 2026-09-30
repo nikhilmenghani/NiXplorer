@@ -5,7 +5,15 @@ import androidx.compose.animation.expandIn
 import androidx.compose.animation.shrinkOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Surface
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -46,7 +54,6 @@ import com.nixplorer.App.Companion.globalClass
 import com.nixplorer.R
 import com.nixplorer.common.block
 import com.nixplorer.common.detectVerticalSwipe
-import com.nixplorer.common.ui.Space
 import com.nixplorer.screen.main.tab.files.FilesTab
 import com.nixplorer.screen.main.tab.files.task.CopyTask
 
@@ -146,66 +153,70 @@ fun BottomOptionsBar(tab: FilesTab) {
         }
     }
 
-    HorizontalDivider()
-
-    Row(
-        Modifier
-            .fillMaxWidth()
-            .block(shape = RectangleShape)
-            .detectVerticalSwipe(
-                onSwipeUp = {
-                    tab.toggleBookmarksDialog(true)
-                }
-            )
+    Box(
+        Modifier.fillMaxWidth().pointerInput(Unit) {
+            // Keep horizontal drags on the action bar away from the tab pager.
+            detectHorizontalDragGestures { change, _ -> change.consume() }
+        },
+        contentAlignment = Alignment.Center
     ) {
-        if (state.showEmptyRecycleBinButton) {
-            BottomOptionsBarButton(Icons.Rounded.DeleteSweep, stringResource(R.string.empty)) {
-                tab.unselectAllFiles(false)
-                tab.activeFolderContent.forEach {
-                    tab.selectedFiles[it.uniquePath] = it
-                }
-                tab.quickReloadFiles()
-                tab.toggleDeleteConfirmationDialog(true)
-            }
-        } else {
-            BottomOptionsBarButton(Icons.Rounded.AddTask, stringResource(R.string.task)) {
-                tab.toggleTasksPanel(true)
-            }
-        }
-
-        BottomOptionsBarButton(Icons.Rounded.Search, stringResource(R.string.search)) {
-            tab.toggleSearchPenal(true)
-        }
-
-        if (!state.showEmptyRecycleBinButton && state.showCreateNewContentButton) {
-            BottomOptionsBarButton(Icons.Rounded.Add, stringResource(R.string.create)) {
-                tab.toggleCreateNewFileDialog(true)
-            }
-        }
-
-        if (state.showMoreOptionsButton && tab.selectedFiles.isNotEmpty()) {
-            BottomOptionsBarButton(Icons.Rounded.SelectAll, stringResource(R.string.select_all)) {
-                if (tab.selectedFiles.size == tab.activeFolderContent.size) {
-                    tab.unselectAllFiles()
-                } else {
+        Row(
+            Modifier
+                .widthIn(max = 448.dp)
+                .fillMaxWidth()
+                .padding(horizontal = 12.dp, vertical = 8.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            if (state.showEmptyRecycleBinButton) {
+                BottomOptionsBarButton(Icons.Rounded.DeleteSweep, stringResource(R.string.empty)) {
                     tab.unselectAllFiles(false)
                     tab.activeFolderContent.forEach {
                         tab.selectedFiles[it.uniquePath] = it
                     }
                     tab.quickReloadFiles()
+                    tab.toggleDeleteConfirmationDialog(true)
+                }
+            } else {
+                BottomOptionsBarButton(Icons.Rounded.AddTask, stringResource(R.string.task)) {
+                    tab.toggleTasksPanel(true)
                 }
             }
 
-            BottomOptionsBarButton(Icons.Rounded.MoreVert, stringResource(R.string.options)) {
-                tab.toggleFileOptionsMenu(tab.selectedFiles[tab.selectedFiles.keys.first()]!!)
-            }
-        } else {
-            BottomOptionsBarButton(Icons.AutoMirrored.Rounded.Sort, stringResource(R.string.sort)) {
-                tab.toggleSortingMenu(true)
+            BottomOptionsBarButton(Icons.Rounded.Search, stringResource(R.string.search)) {
+                tab.toggleSearchPenal(true)
             }
 
-            BottomOptionsBarButton(Icons.Rounded.Bookmark, stringResource(R.string.bookmarks)) {
-                tab.toggleBookmarksDialog(true)
+            if (!state.showEmptyRecycleBinButton && state.showCreateNewContentButton) {
+                BottomOptionsBarButton(Icons.Rounded.Add, stringResource(R.string.create)) {
+                    tab.toggleCreateNewFileDialog(true)
+                }
+            }
+
+            if (state.showMoreOptionsButton && tab.selectedFiles.isNotEmpty()) {
+                BottomOptionsBarButton(Icons.Rounded.SelectAll, stringResource(R.string.select_all)) {
+                    if (tab.selectedFiles.size == tab.activeFolderContent.size) {
+                        tab.unselectAllFiles()
+                    } else {
+                        tab.unselectAllFiles(false)
+                        tab.activeFolderContent.forEach {
+                            tab.selectedFiles[it.uniquePath] = it
+                        }
+                        tab.quickReloadFiles()
+                    }
+                }
+
+                BottomOptionsBarButton(Icons.Rounded.MoreVert, stringResource(R.string.options)) {
+                    tab.toggleFileOptionsMenu(tab.selectedFiles[tab.selectedFiles.keys.first()]!!)
+                }
+            } else {
+                BottomOptionsBarButton(Icons.AutoMirrored.Rounded.Sort, stringResource(R.string.sort)) {
+                    tab.toggleSortingMenu(true)
+                }
+
+                BottomOptionsBarButton(Icons.Rounded.Bookmark, stringResource(R.string.bookmarks)) {
+                    tab.toggleBookmarksDialog(true)
+                }
             }
         }
     }
@@ -215,41 +226,30 @@ fun BottomOptionsBar(tab: FilesTab) {
 fun RowScope.BottomOptionsBarButton(
     imageVector: ImageVector,
     text: String,
-    view: @Composable () -> Unit = {},
     onClick: () -> Unit
 ) {
-    val preferencesManager = globalClass.preferencesManager
-
-    Column(
-        modifier = Modifier
-            .weight(1f)
-            .clickable {
-                onClick()
-            }
-            .padding(vertical = 8.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center
+    Surface(
+        onClick = onClick,
+        modifier = Modifier.weight(1f).semantics { contentDescription = text },
+        shape = RoundedCornerShape(20.dp),
+        color = MaterialTheme.colorScheme.surfaceContainerLow,
+        contentColor = MaterialTheme.colorScheme.onSurfaceVariant
     ) {
-        if (!preferencesManager.showBottomBarLabels) {
-            Space(size = 4.dp)
+        Column(
+            modifier = Modifier.padding(horizontal = 2.dp, vertical = 10.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            Icon(imageVector = imageVector, modifier = Modifier.size(24.dp), contentDescription = null)
+            if (globalClass.preferencesManager.showBottomBarLabels) {
+                Text(
+                    text = text,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Medium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
         }
-
-        Icon(
-            modifier = Modifier.size(20.dp),
-            imageVector = imageVector,
-            contentDescription = null
-        )
-
-        Space(size = 4.dp)
-
-        if (preferencesManager.showBottomBarLabels) {
-            Text(
-                text = text,
-                fontSize = 11.sp,
-                fontWeight = FontWeight.Medium
-            )
-        }
-
-        view()
     }
 }

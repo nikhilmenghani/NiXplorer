@@ -457,4 +457,8 @@
     <string name="show_recent_files_description">Show recently modified files on the home screen</string>
     <string name="duplicate_tab">Duplicate tab</string>
     <string name="reorder_tab">Hold and drag to reorder tab</string>
+    <string name="search_location">Search in: %1$s</string>
+    <string name="search_location_label">Search location</string>
+    <string name="expand_search_location">Show full path</string>
+    <string name="collapse_search_location">Collapse path</string>
 </resources>

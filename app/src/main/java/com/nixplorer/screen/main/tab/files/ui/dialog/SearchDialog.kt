@@ -11,6 +11,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -29,6 +31,9 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.Code
+import androidx.compose.material.icons.rounded.Folder
+import androidx.compose.material.icons.rounded.ExpandLess
+import androidx.compose.material.icons.rounded.ExpandMore
 import androidx.compose.material.icons.rounded.ContentCopy
 import androidx.compose.material.icons.rounded.Description
 import androidx.compose.material.icons.rounded.Extension
@@ -53,6 +58,13 @@ import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.snapshotFlow
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.platform.LocalWindowInfo
+import kotlinx.coroutines.flow.first
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -66,6 +78,8 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.rememberTextMeasurer
+import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -78,6 +92,7 @@ import com.nixplorer.common.block
 import com.nixplorer.common.copyToClipboard
 import com.nixplorer.common.ui.Space
 import com.nixplorer.screen.main.tab.files.FilesTab
+import com.nixplorer.screen.main.tab.files.holder.VirtualFileHolder
 import com.nixplorer.screen.main.tab.files.holder.LocalFileHolder
 import com.nixplorer.screen.main.tab.files.search.SearchManager
 import com.nixplorer.screen.main.tab.files.search.SearchOptions
@@ -127,6 +142,8 @@ fun SearchDialog(
                 // Search Header
                 SearchHeader(
                     searchManager = searchManager,
+                    searchLocation = if (tab.activeFolder is VirtualFileHolder)
+                        tab.activeFolder.displayName else tab.activeFolder.uniquePath,
                     onBackClick = onDismissRequest,
                     onSearchClick = { searchManager.startSearch(tab) },
                     onAdvancedToggle = { showAdvancedOptions = !showAdvancedOptions }
@@ -172,10 +189,22 @@ fun SearchDialog(
 @Composable
 private fun SearchHeader(
     searchManager: SearchManager,
+    searchLocation: String,
     onBackClick: () -> Unit,
     onSearchClick: () -> Unit,
     onAdvancedToggle: () -> Unit
 ) {
+    val focusRequester = remember { FocusRequester() }
+    val keyboardController = LocalSoftwareKeyboardController.current
+    val windowInfo = LocalWindowInfo.current
+
+    LaunchedEffect(Unit) {
+        // Wait for the dialog window before requesting input focus.
+        snapshotFlow { windowInfo.isWindowFocused }.first { it }
+        focusRequester.requestFocus()
+        keyboardController?.show()
+    }
+
     Column {
         Row(
             modifier = Modifier
@@ -190,7 +219,8 @@ private fun SearchHeader(
         ) {
             TextField(
                 modifier = Modifier
-                    .weight(1f),
+                    .weight(1f)
+                    .focusRequester(focusRequester),
                 value = searchManager.searchQuery,
                 onValueChange = { searchManager.searchQuery = it },
                 colors = TextFieldDefaults.colors(
@@ -252,6 +282,94 @@ private fun SearchHeader(
                 )
             }
         }
+        val storageRoot = android.os.Environment.getExternalStorageDirectory().absolutePath
+        val locationParts = if (searchLocation == storageRoot || searchLocation.startsWith("$storageRoot/")) {
+            listOf(stringResource(R.string.internal_storage)) +
+                searchLocation.removePrefix(storageRoot).split('/').filter { it.isNotEmpty() }
+        } else {
+            searchLocation.split('/').filter { it.isNotEmpty() }
+        }
+        var locationExpanded by remember(searchLocation) { mutableStateOf(false) }
+        Surface(
+            onClick = { locationExpanded = !locationExpanded },
+            modifier = Modifier.fillMaxWidth().padding(start = 12.dp, end = 12.dp, bottom = 8.dp),
+            shape = RoundedCornerShape(20.dp),
+            color = MaterialTheme.colorScheme.surfaceContainerLow
+        ) {
+            Row(
+                modifier = Modifier.padding(12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Surface(
+                    shape = RoundedCornerShape(12.dp),
+                    color = MaterialTheme.colorScheme.primaryContainer,
+                    contentColor = MaterialTheme.colorScheme.onPrimaryContainer
+                ) {
+                    Box(Modifier.size(40.dp), contentAlignment = Alignment.Center) {
+                        Icon(Icons.Rounded.Folder, contentDescription = null, modifier = Modifier.size(20.dp))
+                    }
+                }
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Text(
+                        text = stringResource(R.string.search_location_label),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    SearchLocationPath(
+                        path = if (locationExpanded) searchLocation
+                            else locationParts.joinToString("  ›  ").ifEmpty { searchLocation },
+                        expanded = locationExpanded
+                    )
+                }
+                Icon(
+                    imageVector = if (locationExpanded) Icons.Rounded.ExpandLess else Icons.Rounded.ExpandMore,
+                    contentDescription = stringResource(
+                        if (locationExpanded) R.string.collapse_search_location else R.string.expand_search_location
+                    ),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun SearchLocationPath(path: String, expanded: Boolean) {
+    val textMeasurer = rememberTextMeasurer()
+    val style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium)
+    BoxWithConstraints(Modifier.fillMaxWidth()) {
+        val availableWidth = constraints.maxWidth
+        val displayPath = remember(path, expanded, availableWidth, style, textMeasurer) {
+            fun fits(value: String) = !textMeasurer.measure(
+                text = value,
+                style = style,
+                maxLines = 2,
+                constraints = Constraints(maxWidth = availableWidth)
+            ).hasVisualOverflow
+
+            if (expanded || fits(path)) {
+                path
+            } else {
+                // Find the longest trailing path that fits two lines.
+                var low = 0
+                var high = path.length
+                while (low < high) {
+                    val middle = (low + high) / 2
+                    if (fits("… " + path.substring(middle))) high = middle
+                    else low = middle + 1
+                }
+                "… " + path.substring(low)
+            }
+        }
+        Text(
+            text = displayPath,
+            style = style,
+            color = MaterialTheme.colorScheme.onSurface,
+            minLines = 2,
+            maxLines = if (expanded) Int.MAX_VALUE else 2,
+            overflow = TextOverflow.Clip
+        )
     }
 }
 
