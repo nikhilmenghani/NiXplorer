@@ -51,6 +51,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.pointerInput
+import kotlinx.coroutines.delay
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -71,6 +75,21 @@ fun VideoPlayerScreen(
 ) {
     val context = LocalContext.current
     val playerState by videoPlayerInstance.playerState.collectAsState()
+    val view = LocalView.current
+    var touchingControls by remember { mutableStateOf(false) }
+
+    DisposableEffect(view, playerState.isPlaying) {
+        val previousKeepScreenOn = view.keepScreenOn
+        view.keepScreenOn = playerState.isPlaying
+        onDispose { view.keepScreenOn = previousKeepScreenOn }
+    }
+
+    LaunchedEffect(playerState.showControls, playerState.isPlaying, playerState.isLoading, touchingControls) {
+        if (playerState.showControls && playerState.isPlaying && !playerState.isLoading && !touchingControls) {
+            delay(3000)
+            videoPlayerInstance.hideControls()
+        }
+    }
 
     LaunchedEffect(videoUri) {
         videoPlayerInstance.initializePlayer(context, videoUri)
@@ -86,7 +105,14 @@ fun VideoPlayerScreen(
         color = colorScheme.background
     ) {
         Box(
-            modifier = Modifier.fillMaxSize()
+            modifier = Modifier.fillMaxSize().pointerInput(Unit) {
+                awaitPointerEventScope {
+                    while (true) {
+                        val event = awaitPointerEvent(PointerEventPass.Initial)
+                        touchingControls = event.changes.any { it.pressed }
+                    }
+                }
+            }
         ) {
             // Video Player View
             if (playerState.isReady) {
@@ -95,6 +121,7 @@ fun VideoPlayerScreen(
                         PlayerView(ctx).apply {
                             player = videoPlayerInstance.getPlayer()
                             useController = false
+                            setBackgroundColor(android.graphics.Color.BLACK)
                         }
                     },
                     modifier = Modifier

@@ -46,10 +46,7 @@ class VideoPlayerInstance(
                     .setUri(uri)
                     .build()
 
-                setMediaItem(mediaItem)
-                prepare()
-
-                volume = 0f
+                volume = 1f
 
                 _playerState.update { currentState ->
                     currentState.copy(
@@ -80,6 +77,9 @@ class VideoPlayerInstance(
                         }
                     }
                 })
+                setMediaItem(mediaItem)
+                playWhenReady = true
+                prepare()
             }
         }
         startPositionTracking()
@@ -134,6 +134,10 @@ class VideoPlayerInstance(
         _playerState.update { currentState ->
             currentState.copy(showControls = !currentState.showControls)
         }
+    }
+
+    fun hideControls() {
+        _playerState.update { it.copy(showControls = false) }
     }
 
     fun toggleRepeatMode() {
