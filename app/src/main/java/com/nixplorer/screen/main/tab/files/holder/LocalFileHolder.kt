@@ -19,6 +19,7 @@ import com.nixplorer.screen.main.tab.files.FilesTab
 import com.nixplorer.screen.main.tab.files.misc.ContentCount
 import com.nixplorer.screen.main.tab.files.misc.DefaultOpeningMethods
 import com.nixplorer.screen.main.tab.files.misc.FileMimeType
+import com.nixplorer.screen.main.tab.files.misc.isTransportStream
 import com.nixplorer.screen.main.tab.files.misc.FileMimeType.anyFileType
 import com.nixplorer.screen.main.tab.files.misc.FileMimeType.codeFileType
 import com.nixplorer.screen.main.tab.files.misc.FileMimeType.editableFileType
@@ -58,7 +59,8 @@ class LocalFileHolder(val file: File) : ContentHolder() {
 
     override val canWrite: Boolean by lazy { file.canWrite() }
 
-    val mimeType by lazy { file.mimeType ?: anyFileType }
+    private val isTsVideo by lazy { extension == "ts" && file.isTransportStream() }
+    val mimeType by lazy { if (isTsVideo) "video/mp2t" else file.mimeType ?: anyFileType }
 
     val basePath by lazy { file.getBasePath(globalClass) }
 
@@ -278,7 +280,7 @@ class LocalFileHolder(val file: File) : ContentHolder() {
 
         if (skipSupportedExtensions) return false
 
-        if (codeFileType.contains(extension) || editableFileType.contains(extension)) {
+        if (!isTsVideo && (codeFileType.contains(extension) || editableFileType.contains(extension))) {
             globalClass.textEditorManager.openTextEditor(
                 this,
                 context
