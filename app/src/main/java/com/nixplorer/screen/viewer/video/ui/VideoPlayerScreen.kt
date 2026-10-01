@@ -77,6 +77,15 @@ fun VideoPlayerScreen(
     val playerState by videoPlayerInstance.playerState.collectAsState()
     val view = LocalView.current
     var touchingControls by remember { mutableStateOf(false) }
+    val zoomState = rememberZoomState()
+    var gestureFeedback by remember(videoUri) { mutableStateOf<Pair<Boolean, Float>?>(null) }
+    val levelGestures = videoLevelGestures(enabled = { zoomState.scale <= 1f }) { gestureFeedback = it }
+    LaunchedEffect(gestureFeedback) {
+        if (gestureFeedback != null) {
+            delay(800)
+            gestureFeedback = null
+        }
+    }
 
     DisposableEffect(view, playerState.isPlaying) {
         val previousKeepScreenOn = view.keepScreenOn
@@ -126,8 +135,9 @@ fun VideoPlayerScreen(
                     },
                     modifier = Modifier
                         .fillMaxSize()
+                        .then(levelGestures)
                         .zoomable(
-                            zoomState = rememberZoomState(),
+                            zoomState = zoomState,
                             onTap = {
                                 videoPlayerInstance.toggleControls()
                             }
@@ -160,6 +170,8 @@ fun VideoPlayerScreen(
                     onToggleMute = { videoPlayerInstance.toggleMute() },
                 )
             }
+
+            gestureFeedback?.let { VideoLevelFeedback(it) }
 
             // Loading indicator
             if (playerState.isLoading) {

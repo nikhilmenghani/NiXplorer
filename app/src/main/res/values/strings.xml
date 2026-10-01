@@ -464,4 +464,5 @@
     <string name="search_wildcard_hint">Wildcards: *.apk for all APKs, N*.apk for names starting with N. ? matches one character.</string>
     <string name="search_regex_hint">Regex example: .*\\.apk$ for APK files. Turn off Use Regex to use *.apk.</string>
     <string name="invalid_search_regex">Invalid regular expression. For *.apk wildcard search, turn off Use Regex.</string>
+    <string name="brightness">Brightness</string>
 </resources>
