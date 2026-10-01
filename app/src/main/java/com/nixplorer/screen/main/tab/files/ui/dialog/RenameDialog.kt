@@ -85,149 +85,48 @@ import sh.calvin.reorderable.ReorderableItem
 import sh.calvin.reorderable.rememberReorderableLazyListState
 
 @Composable
-fun RenameDialog(
-    show: Boolean,
-    tab: FilesTab,
-    onDismissRequest: () -> Unit
-) {
-    if (show) {
-        if (tab.selectedFiles.size == 1) {
-            val target by remember { mutableStateOf(tab.selectedFiles.values.first()) }
-            val listContent by remember {
-                mutableStateOf(tab.activeFolderContent.map { it.displayName }.toTypedArray())
+fun RenameDialog(show: Boolean, tab: FilesTab, onDismissRequest: () -> Unit) {
+    if (!show) return
+    if (tab.selectedFiles.size != 1) {
+        AdvanceRenameDialog(tab, onDismissRequest)
+        return
+    }
+    val target = remember { tab.selectedFiles.values.first() }
+    var name by remember { mutableStateOf(target.displayName) }
+    var submitting by remember { mutableStateOf(false) }
+    val error = when {
+        name.isBlank() || name == target.displayName -> ""
+        !name.isValidAsFileName() -> stringResource(R.string.invalid_file_name)
+        tab.activeFolderContent.any { it.displayName == name } -> stringResource(R.string.similar_file_exists)
+        else -> ""
+    }
+    val valid = name.isNotBlank() && name != target.displayName && error.isEmpty() && !submitting
+    fun rename() {
+        if (!valid) return
+        submitting = true
+        val requestedName = name
+        tab.scope.launch {
+            if (tab.activeFolder.findFile(requestedName) != null) {
+                globalClass.showMsg(R.string.similar_file_exists)
+                submitting = false
+                return@launch
             }
-
-            var newNameInput by remember { mutableStateOf(target.displayName) }
-            var error by remember { mutableStateOf("") }
-
-            LaunchedEffect(newNameInput) {
-                error = if (newNameInput.isBlank() || newNameInput == target.displayName) {
-                    emptyString
-                } else if (!newNameInput.isValidAsFileName()) {
-                    globalClass.getString(R.string.invalid_file_name)
-                } else if (listContent.contains(newNameInput)) {
-                    globalClass.getString(R.string.similar_file_exists)
-                } else {
-                    emptyString
-                }
-            }
-
-            Dialog(
-                onDismissRequest = onDismissRequest,
-            ) {
-                Card(
-                    shape = RoundedCornerShape(6.dp),
-                    colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
-                    ),
-                    elevation = CardDefaults.cardElevation(defaultElevation = 8.dp)
-                ) {
-                    Column(
-                        modifier = Modifier
-                            .padding(24.dp),
-                        verticalArrangement = Arrangement.spacedBy(16.dp)
-                    ) {
-                        Column {
-                            Text(
-                                modifier = Modifier.fillMaxWidth(),
-                                text = stringResource(R.string.rename),
-                                style = MaterialTheme.typography.headlineSmall,
-                                fontWeight = FontWeight.SemiBold,
-                                textAlign = TextAlign.Center,
-                                color = MaterialTheme.colorScheme.onSurface
-                            )
-                            Space(8.dp)
-                            HorizontalDivider(
-                                thickness = 1.dp,
-                                color = MaterialTheme.colorScheme.outlineVariant
-                            )
-                        }
-
-                        TextField(
-                            modifier = Modifier.fillMaxWidth(),
-                            value = newNameInput,
-                            onValueChange = {
-                                newNameInput = it
-                            },
-                            label = { Text(text = stringResource(R.string.new_name)) },
-                            singleLine = true,
-                            shape = RoundedCornerShape(6.dp),
-                            colors = TextFieldDefaults.colors(
-                                errorIndicatorColor = Color.Transparent,
-                                focusedIndicatorColor = Color.Transparent,
-                                unfocusedIndicatorColor = Color.Transparent,
-                                disabledIndicatorColor = Color.Transparent
-                            ),
-                            isError = error.isNotEmpty(),
-                            supportingText = if (error.isNotEmpty()) {
-                                { Text(error) }
-                            } else null
-                        )
-
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(12.dp)
-                        ) {
-                            OutlinedButton(
-                                modifier = Modifier.weight(1f),
-                                onClick = {
-                                    onDismissRequest()
-                                },
-                                shape = RoundedCornerShape(6.dp)
-                            ) {
-                                Text(
-                                    text = stringResource(R.string.cancel),
-                                    style = MaterialTheme.typography.labelLarge
-                                )
-                            }
-
-                            Button(
-                                modifier = Modifier.weight(1f),
-                                onClick = {
-                                    tab.scope.launch {
-                                        if (newNameInput.isValidAsFileName()) {
-                                            val similarFile =
-                                                tab.activeFolder.findFile(newNameInput)
-                                            if (similarFile == null) {
-                                                onDismissRequest()
-                                                globalClass.taskManager.addTaskAndRun(
-                                                    task = RenameTask(sourceContent = tab.selectedFiles.values.toList()),
-                                                    parameters = RenameTaskParameters(
-                                                        newName = newNameInput,
-                                                        toFind = emptyString,
-                                                        toReplace = emptyString,
-                                                        useRegex = false
-                                                    )
-                                                )
-                                            } else {
-                                                globalClass.showMsg(R.string.similar_file_exists)
-                                            }
-                                        } else {
-                                            globalClass.showMsg(R.string.invalid_file_name)
-                                        }
-                                    }
-                                },
-                                enabled = error.isEmpty() && newNameInput.isNotBlank() && newNameInput isNot target.displayName,
-                                shape = RoundedCornerShape(6.dp)
-                            ) {
-                                Text(
-                                    text = stringResource(R.string.rename),
-                                    style = MaterialTheme.typography.labelLarge
-                                )
-                            }
-                        }
-                    }
-                }
-            }
-        } else {
-            AdvanceRenameDialog(
-                tab = tab,
-                onDismissRequest = onDismissRequest
+            onDismissRequest()
+            globalClass.taskManager.addTaskAndRun(
+                task = RenameTask(sourceContent = listOf(target)),
+                parameters = RenameTaskParameters(newName = requestedName, toFind = emptyString,
+                    toReplace = emptyString, useRegex = false)
             )
         }
     }
+    com.nixplorer.common.ui.TextEntryTopSheet(stringResource(R.string.rename), onDismissRequest) { focus ->
+        com.nixplorer.common.ui.SheetEntryField(name, { name = it }, stringResource(R.string.new_name), focus,
+            error, valid, ::rename)
+        Button(onClick = ::rename, enabled = valid, modifier = Modifier.fillMaxWidth()) {
+            Text(stringResource(R.string.rename))
+        }
+    }
 }
-
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AdvanceRenameDialog(
