@@ -15,6 +15,8 @@ import com.nixplorer.common.fromJson
 import com.nixplorer.common.hasParent
 import com.nixplorer.common.isNot
 import com.nixplorer.common.toFormattedSize
+import com.nixplorer.common.toFormattedDate
+import com.nixplorer.screen.main.tab.files.misc.folderSummary
 import com.nixplorer.screen.main.tab.files.FilesTab
 import com.nixplorer.screen.main.tab.files.misc.ContentCount
 import com.nixplorer.screen.main.tab.files.misc.DefaultOpeningMethods
@@ -70,13 +72,18 @@ class LocalFileHolder(val file: File) : ContentHolder() {
         if (details.isNotEmpty()) return details
 
         return buildString {
-            append(getLastModifiedDate())
             if (file.isDirectory) {
+                val summary = file.folderSummary()
+                append(summary.lastUpdated.toFormattedDate())
+                append(separator)
+                val formattedSize = summary.bytes.toFormattedSize()
+                append(if (summary.complete) formattedSize else globalClass.getString(R.string.folder_size_at_least, formattedSize))
                 if (globalClass.preferencesManager.showFolderContentCount && file.canRead()) {
                     append(separator)
                     append(getFormattedFileCount())
                 }
             } else {
+                append(getLastModifiedDate())
                 append(separator)
                 append(file.length().toFormattedSize())
                 append(separator)

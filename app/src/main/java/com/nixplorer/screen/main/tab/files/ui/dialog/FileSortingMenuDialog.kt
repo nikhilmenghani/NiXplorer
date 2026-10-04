@@ -20,6 +20,7 @@ import androidx.compose.material.icons.rounded.SortByAlpha
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.RadioButton
@@ -67,6 +68,11 @@ fun FileSortingMenuDialog(
         }
         var reverseOrder by remember(tab.activeFolder.uniquePath) {
             mutableStateOf(specificOptions.reverseSorting)
+        }
+
+        fun selectMethod(method: Int) {
+            if (sortingMethod == method) reverseOrder = !reverseOrder
+            else sortingMethod = method
         }
 
         fun updateForThisFolder() {
@@ -170,9 +176,9 @@ fun FileSortingMenuDialog(
                     ) {
                         RadioButtonItem(
                             icon = Icons.Rounded.SortByAlpha,
-                            text = stringResource(R.string.name_a_z),
+                            text = stringResource(if (reverseOrder) R.string.name_z_a else R.string.name_a_z),
                             selected = sortingMethod == SortingMethod.SORT_BY_NAME,
-                            onClick = { sortingMethod = SortingMethod.SORT_BY_NAME }
+                            onClick = { selectMethod(SortingMethod.SORT_BY_NAME) }
                         )
 
                         HorizontalDivider(
@@ -182,9 +188,9 @@ fun FileSortingMenuDialog(
 
                         RadioButtonItem(
                             icon = Icons.Rounded.DateRange,
-                            text = stringResource(R.string.date_newer),
+                            text = stringResource(if (reverseOrder) R.string.date_older else R.string.date_newer),
                             selected = sortingMethod == SortingMethod.SORT_BY_DATE,
-                            onClick = { sortingMethod = SortingMethod.SORT_BY_DATE }
+                            onClick = { selectMethod(SortingMethod.SORT_BY_DATE) }
                         )
 
                         HorizontalDivider(
@@ -194,9 +200,9 @@ fun FileSortingMenuDialog(
 
                         RadioButtonItem(
                             icon = Icons.AutoMirrored.Rounded.Sort,
-                            text = stringResource(R.string.size_smaller),
+                            text = stringResource(if (reverseOrder) R.string.size_larger else R.string.size_smaller),
                             selected = sortingMethod == SortingMethod.SORT_BY_SIZE,
-                            onClick = { sortingMethod = SortingMethod.SORT_BY_SIZE }
+                            onClick = { selectMethod(SortingMethod.SORT_BY_SIZE) }
                         )
 
                         HorizontalDivider(
@@ -208,7 +214,7 @@ fun FileSortingMenuDialog(
                             icon = Icons.AutoMirrored.Rounded.InsertDriveFile,
                             text = stringResource(R.string.type),
                             selected = sortingMethod == SortingMethod.SORT_BY_TYPE,
-                            onClick = { sortingMethod = SortingMethod.SORT_BY_TYPE }
+                            onClick = { selectMethod(SortingMethod.SORT_BY_TYPE) }
                         )
                     }
                 }
@@ -243,12 +249,38 @@ fun FileSortingMenuDialog(
                             color = MaterialTheme.colorScheme.outline.copy(alpha = 0.12f)
                         )
 
-                        SwitchSettingItem(
-                            icon = Icons.AutoMirrored.Rounded.InsertDriveFile,
-                            title = stringResource(R.string.reverse),
-                            checked = reverseOrder,
-                            onCheckedChange = { reverseOrder = it }
+                        Text(
+                            text = stringResource(R.string.sort_order),
+                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                            style = MaterialTheme.typography.titleSmall
                         )
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+                            horizontalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            val normalLabel = when (sortingMethod) {
+                                SortingMethod.SORT_BY_DATE -> R.string.newest_first
+                                SortingMethod.SORT_BY_SIZE -> R.string.smallest_first
+                                else -> R.string.order_a_z
+                            }
+                            val reverseLabel = when (sortingMethod) {
+                                SortingMethod.SORT_BY_DATE -> R.string.oldest_first
+                                SortingMethod.SORT_BY_SIZE -> R.string.largest_first
+                                else -> R.string.order_z_a
+                            }
+                            FilterChip(
+                                modifier = Modifier.weight(1f),
+                                selected = !reverseOrder,
+                                onClick = { reverseOrder = false },
+                                label = { Text(stringResource(normalLabel)) }
+                            )
+                            FilterChip(
+                                modifier = Modifier.weight(1f),
+                                selected = reverseOrder,
+                                onClick = { reverseOrder = true },
+                                label = { Text(stringResource(reverseLabel)) }
+                            )
+                        }
                     }
                 }
             }

@@ -518,6 +518,7 @@ private fun CategoriesSection(
 private fun StorageSection(
     mainActivityManager: MainActivityManager
 ) {
+    val context = LocalContext.current
     val storageList = remember { mutableStateListOf<StorageDevice>() }
 
     LaunchedEffect(Unit) {
@@ -550,6 +551,15 @@ private fun StorageSection(
             )
             .clip(RoundedCornerShape(12.dp))
     ) {
+        TextButton(
+            onClick = {
+                context.startActivity(android.content.Intent(context, com.nixplorer.screen.storage.StorageAnalyzerActivity::class.java))
+            },
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Text(stringResource(R.string.analyze_storage))
+        }
+        HorizontalDivider(thickness = 0.5.dp)
         storageList.forEachIndexed { index, device ->
             StorageDeviceView(storageDevice = device) {
                 mainActivityManager.replaceCurrentTabWith(FilesTab(device.contentHolder))

@@ -14,6 +14,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.nixplorer.App.Companion.globalClass
 import com.nixplorer.R
@@ -100,6 +101,12 @@ fun DeleteConfirmationDialog(
                 Column(Modifier.fillMaxWidth()) {
                     Text(
                         text = stringResource(id = R.string.delete_confirmation_message)
+                    )
+                    Space(size = 8.dp)
+                    Text(
+                        text = targetFiles.joinToString("\n") { it.displayName },
+                        maxLines = 3,
+                        overflow = TextOverflow.Ellipsis
                     )
 
                     if (!bottomOptionsBarState.value.showEmptyRecycleBinButton) {
