@@ -516,4 +516,12 @@
     <string name="larger_rows">Rows +</string>
     <string name="smaller_text">Text −</string>
     <string name="larger_text">Text +</string>
+    <string name="toggle_sort_direction">Reverse order: %1$s</string>
+    <string name="relative_modified_time">Relative modification time</string>
+    <string name="relative_modified_time_description">Show “3 minutes ago” instead of the modification date and time</string>
+    <string name="folder_count_at_least">At least %1$s</string>
+    <plurals name="folder_file_count">
+        <item quantity="one">%1$d file</item>
+        <item quantity="other">%1$d files</item>
+    </plurals>
 </resources>

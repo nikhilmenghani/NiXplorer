@@ -9,13 +9,14 @@ import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 
-internal data class FolderSummary(val bytes: Long, val lastUpdated: Long, val complete: Boolean)
+internal data class FolderSummary(val bytes: Long, val lastUpdated: Long, val complete: Boolean, val fileCount: Long = 0)
 
 private val folderScans = Semaphore(2)
 
 internal suspend fun File.folderSummary(): FolderSummary = withContext(Dispatchers.IO) {
     folderScans.withPermit {
         var bytes = 0L
+        var fileCount = 0L
         var updated = lastModified()
         var complete = true
         val pending = ArrayDeque<File>()
@@ -31,8 +32,9 @@ internal suspend fun File.folderSummary(): FolderSummary = withContext(Dispatche
                 if (children == null) complete = false else pending.addAll(children)
             } else if (entry.isFile) {
                 bytes += entry.length()
+                fileCount++
             } else complete = false
         }
-        FolderSummary(bytes, updated, complete)
+        FolderSummary(bytes, updated, complete, fileCount)
     }
 }

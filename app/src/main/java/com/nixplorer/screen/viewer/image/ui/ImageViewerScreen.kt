@@ -1,6 +1,17 @@
 package com.nixplorer.screen.viewer.image.ui
 
 import android.content.Intent
+import android.net.Uri
+import androidx.activity.ComponentActivity
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.runtime.key
+import androidx.core.content.FileProvider
+import com.nixplorer.screen.main.tab.files.holder.LocalFileHolder
+import com.nixplorer.screen.main.tab.files.misc.FileMimeType
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import java.io.File
 import android.graphics.Bitmap
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Spring
@@ -96,6 +107,42 @@ import me.saket.telephoto.zoomable.coil3.ZoomableAsyncImage
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ImageViewerScreen(instance: ViewerInstance) {
+    val context = LocalContext.current
+    var images by remember(instance.uri) { mutableStateOf(listOf(instance.uri)) }
+    var initialPage by remember(instance.uri) { mutableIntStateOf(0) }
+    var galleryReady by remember(instance.uri) { mutableStateOf(false) }
+    LaunchedEffect(instance.uri) {
+        val path = (context as? ComponentActivity)?.intent?.getStringExtra("image_path")
+        if (path == null) { galleryReady = true; return@LaunchedEffect }
+        val opened = File(path)
+        val parent = opened.parentFile
+        if (parent == null) { galleryReady = true; return@LaunchedEffect }
+        val siblings = withContext(Dispatchers.IO) {
+            runCatching {
+                LocalFileHolder(parent).listSortedContent().filterIsInstance<LocalFileHolder>()
+                    .filter { !it.isFolder && it.extension in FileMimeType.imageFileType }
+                    .map { it.file }
+            }.getOrDefault(emptyList())
+        }
+        val index = siblings.indexOfFirst { it.absolutePath == opened.absolutePath }
+        if (index >= 0) {
+            initialPage = index
+            images = siblings.map { FileProvider.getUriForFile(context, context.packageName + ".provider", it) }
+        }
+        galleryReady = true
+    }
+    if (!galleryReady) { LoadingState(); return }
+    key(images) {
+        val pager = rememberPagerState(initialPage = initialPage, pageCount = { images.size })
+        HorizontalPager(state = pager, modifier = Modifier.fillMaxSize(), key = { images[it].toString() }) { page ->
+            ImageViewerPage(images[page])
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ImageViewerPage(uri: Uri) {
     val defaultColor = MaterialTheme.colorScheme.surface
     var dominantColor by remember { mutableStateOf(defaultColor) }
     var secondaryColor by remember { mutableStateOf(defaultColor) }
@@ -118,9 +165,9 @@ fun ImageViewerScreen(instance: ViewerInstance) {
     val context = LocalContext.current
 
     // Load image data
-    LaunchedEffect(instance.uri) {
+    LaunchedEffect(uri) {
         try {
-            imageData = instance.uri.read()
+            imageData = uri.read()
             isLoading = false
         } catch (e: Exception) {
             logger.logError(e)
@@ -133,7 +180,7 @@ fun ImageViewerScreen(instance: ViewerInstance) {
     LaunchedEffect(imageData, imageDimensions.first) {
         if (imageData.isNotEmpty() && imageDimensions.first.isNotEmpty()) {
             imageInfo =
-                extractImageInfo(instance.uri, imageDimensions.first, imageDimensions.second)
+                extractImageInfo(uri, imageDimensions.first, imageDimensions.second)
         }
     }
 
@@ -161,7 +208,7 @@ fun ImageViewerScreen(instance: ViewerInstance) {
 
                 ZoomableAsyncImage(
                     model = ImageRequest.Builder(LocalContext.current)
-                        .data(instance.uri)
+                        .data(uri)
                         .listener(
                             onSuccess = { _, state ->
                                 image = state.image
@@ -286,7 +333,7 @@ fun ImageViewerScreen(instance: ViewerInstance) {
                             }
                         },
                         actions = {
-                            IconButton(onClick = { openExternally(context, instance.uri, "image/*") }) {
+                            IconButton(onClick = { openExternally(context, uri, "image/*") }) {
                                 Icon(Icons.AutoMirrored.Filled.OpenInNew, stringResource(R.string.open_externally))
                             }
                             IconButton(onClick = { showInfo = true }) {
@@ -321,8 +368,8 @@ fun ImageViewerScreen(instance: ViewerInstance) {
                         onEdit = {
                             val editIntent = Intent(Intent.ACTION_EDIT)
                             val mimeType =
-                                context.contentResolver.getType(instance.uri) ?: "image/*"
-                            editIntent.setDataAndType(instance.uri, mimeType)
+                                context.contentResolver.getType(uri) ?: "image/*"
+                            editIntent.setDataAndType(uri, mimeType)
                             editIntent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
                             val chooser = Intent.createChooser(
                                 editIntent,

@@ -14,6 +14,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.InsertDriveFile
 import androidx.compose.material.icons.automirrored.rounded.Sort
 import androidx.compose.material.icons.rounded.ArrowDownward
+import androidx.compose.material.icons.rounded.ArrowUpward
+import androidx.compose.material3.IconButton
 import androidx.compose.material.icons.rounded.DateRange
 import androidx.compose.material.icons.rounded.Folder
 import androidx.compose.material.icons.rounded.SortByAlpha
@@ -66,13 +68,21 @@ fun FileSortingMenuDialog(
         var showFoldersFirst by remember(tab.activeFolder.uniquePath) {
             mutableStateOf(specificOptions.showFoldersFirst)
         }
-        var reverseOrder by remember(tab.activeFolder.uniquePath) {
-            mutableStateOf(specificOptions.reverseSorting)
+        var directionMask by remember(tab.activeFolder.uniquePath) {
+            mutableIntStateOf(specificOptions.directionMask.let {
+                val bit = 1 shl specificOptions.sortMethod
+                if (specificOptions.reversedFor(specificOptions.sortMethod)) it or bit else it and bit.inv()
+            })
+        }
+        val reverseOrder = directionMask and (1 shl sortingMethod) != 0
+        fun reversed(method: Int) = directionMask and (1 shl method) != 0
+        fun toggleDirection(method: Int) {
+            directionMask = directionMask xor (1 shl method)
+            sortingMethod = method
         }
 
         fun selectMethod(method: Int) {
-            if (sortingMethod == method) reverseOrder = !reverseOrder
-            else sortingMethod = method
+            sortingMethod = method
         }
 
         fun updateForThisFolder() {
@@ -82,17 +92,21 @@ fun FileSortingMenuDialog(
                     sortMethod = sortingMethod,
                     showFoldersFirst = showFoldersFirst,
                     reverseSorting = reverseOrder,
+                    directionMask = directionMask,
+                    configuredDirections = 30,
                     applyForThisFileOnly = true
                 )
             )
         }
 
         BottomSheetDialog(
+            skipPartiallyExpanded = true,
             onDismissRequest = {
                 if (applyForThisFileOnly) {
                     if (showFoldersFirst != prefs.showFoldersFirst
                         || reverseOrder != prefs.reverse
                         || sortingMethod != prefs.defaultSortMethod
+                        || directionMask != prefs.sortDirectionMask
                     ) {
                         updateForThisFolder()
                     } else {
@@ -102,6 +116,8 @@ fun FileSortingMenuDialog(
                     prefs.showFoldersFirst = showFoldersFirst
                     prefs.reverse = reverseOrder
                     prefs.defaultSortMethod = sortingMethod
+                    prefs.sortDirectionMask = directionMask
+                    prefs.configuredSortDirections = 30
                 }
                 onDismissRequest()
             }
@@ -117,7 +133,7 @@ fun FileSortingMenuDialog(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(horizontal = 24.dp)
-                        .padding(bottom = 16.dp),
+                        .padding(bottom = 8.dp),
                     horizontalArrangement = Arrangement.Center,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
@@ -130,7 +146,7 @@ fun FileSortingMenuDialog(
                     Space(8.dp)
                     Text(
                         text = stringResource(R.string.sort_by),
-                        style = MaterialTheme.typography.headlineSmall,
+                        style = MaterialTheme.typography.titleLarge,
                         color = MaterialTheme.colorScheme.onSurface,
                         fontWeight = FontWeight.Medium
                     )
@@ -152,14 +168,14 @@ fun FileSortingMenuDialog(
                     )
                 }
 
-                Space(size = 24.dp)
+                Space(size = 12.dp)
 
                 // Sort Method Section
                 Text(
                     text = "Sort Method",
                     style = MaterialTheme.typography.titleMedium,
                     color = MaterialTheme.colorScheme.onSurface,
-                    modifier = Modifier.padding(bottom = 12.dp)
+                    modifier = Modifier.padding(bottom = 6.dp)
                 )
 
                 Card(
@@ -176,7 +192,8 @@ fun FileSortingMenuDialog(
                     ) {
                         RadioButtonItem(
                             icon = Icons.Rounded.SortByAlpha,
-                            text = stringResource(if (reverseOrder) R.string.name_z_a else R.string.name_a_z),
+                            text = stringResource(if (reversed(SortingMethod.SORT_BY_NAME)) R.string.name_z_a else R.string.name_a_z),
+                            reversed = reversed(SortingMethod.SORT_BY_NAME), onToggleDirection = { toggleDirection(SortingMethod.SORT_BY_NAME) },
                             selected = sortingMethod == SortingMethod.SORT_BY_NAME,
                             onClick = { selectMethod(SortingMethod.SORT_BY_NAME) }
                         )
@@ -188,7 +205,8 @@ fun FileSortingMenuDialog(
 
                         RadioButtonItem(
                             icon = Icons.Rounded.DateRange,
-                            text = stringResource(if (reverseOrder) R.string.date_older else R.string.date_newer),
+                            text = stringResource(if (reversed(SortingMethod.SORT_BY_DATE)) R.string.date_older else R.string.date_newer),
+                            reversed = reversed(SortingMethod.SORT_BY_DATE), onToggleDirection = { toggleDirection(SortingMethod.SORT_BY_DATE) },
                             selected = sortingMethod == SortingMethod.SORT_BY_DATE,
                             onClick = { selectMethod(SortingMethod.SORT_BY_DATE) }
                         )
@@ -200,7 +218,8 @@ fun FileSortingMenuDialog(
 
                         RadioButtonItem(
                             icon = Icons.AutoMirrored.Rounded.Sort,
-                            text = stringResource(if (reverseOrder) R.string.size_larger else R.string.size_smaller),
+                            text = stringResource(if (reversed(SortingMethod.SORT_BY_SIZE)) R.string.size_larger else R.string.size_smaller),
+                            reversed = reversed(SortingMethod.SORT_BY_SIZE), onToggleDirection = { toggleDirection(SortingMethod.SORT_BY_SIZE) },
                             selected = sortingMethod == SortingMethod.SORT_BY_SIZE,
                             onClick = { selectMethod(SortingMethod.SORT_BY_SIZE) }
                         )
@@ -212,21 +231,22 @@ fun FileSortingMenuDialog(
 
                         RadioButtonItem(
                             icon = Icons.AutoMirrored.Rounded.InsertDriveFile,
-                            text = stringResource(R.string.type),
+                            text = stringResource(R.string.type) + " · " + stringResource(if (reversed(SortingMethod.SORT_BY_TYPE)) R.string.order_z_a else R.string.order_a_z),
+                            reversed = reversed(SortingMethod.SORT_BY_TYPE), onToggleDirection = { toggleDirection(SortingMethod.SORT_BY_TYPE) },
                             selected = sortingMethod == SortingMethod.SORT_BY_TYPE,
                             onClick = { selectMethod(SortingMethod.SORT_BY_TYPE) }
                         )
                     }
                 }
 
-                Space(size = 24.dp)
+                Space(size = 12.dp)
 
                 // Display Options Section
                 Text(
                     text = "Display Options",
                     style = MaterialTheme.typography.titleMedium,
                     color = MaterialTheme.colorScheme.onSurface,
-                    modifier = Modifier.padding(bottom = 12.dp)
+                    modifier = Modifier.padding(bottom = 6.dp)
                 )
 
                 Card(
@@ -244,43 +264,7 @@ fun FileSortingMenuDialog(
                             onCheckedChange = { showFoldersFirst = it }
                         )
 
-                        HorizontalDivider(
-                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
-                            color = MaterialTheme.colorScheme.outline.copy(alpha = 0.12f)
-                        )
 
-                        Text(
-                            text = stringResource(R.string.sort_order),
-                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-                            style = MaterialTheme.typography.titleSmall
-                        )
-                        Row(
-                            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
-                            horizontalArrangement = Arrangement.spacedBy(12.dp)
-                        ) {
-                            val normalLabel = when (sortingMethod) {
-                                SortingMethod.SORT_BY_DATE -> R.string.newest_first
-                                SortingMethod.SORT_BY_SIZE -> R.string.smallest_first
-                                else -> R.string.order_a_z
-                            }
-                            val reverseLabel = when (sortingMethod) {
-                                SortingMethod.SORT_BY_DATE -> R.string.oldest_first
-                                SortingMethod.SORT_BY_SIZE -> R.string.largest_first
-                                else -> R.string.order_z_a
-                            }
-                            FilterChip(
-                                modifier = Modifier.weight(1f),
-                                selected = !reverseOrder,
-                                onClick = { reverseOrder = false },
-                                label = { Text(stringResource(normalLabel)) }
-                            )
-                            FilterChip(
-                                modifier = Modifier.weight(1f),
-                                selected = reverseOrder,
-                                onClick = { reverseOrder = true },
-                                label = { Text(stringResource(reverseLabel)) }
-                            )
-                        }
                     }
                 }
             }
@@ -293,6 +277,8 @@ private fun RadioButtonItem(
     icon: androidx.compose.ui.graphics.vector.ImageVector,
     text: String,
     selected: Boolean,
+    reversed: Boolean,
+    onToggleDirection: () -> Unit,
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -312,7 +298,7 @@ private fun RadioButtonItem(
         shape = MaterialTheme.shapes.medium
     ) {
         Row(
-            modifier = Modifier.padding(16.dp),
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 2.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(16.dp)
         ) {
@@ -338,6 +324,10 @@ private fun RadioButtonItem(
                 modifier = Modifier.weight(1f)
             )
 
+            IconButton(onClick = onToggleDirection) {
+                Icon(if (reversed) Icons.Rounded.ArrowDownward else Icons.Rounded.ArrowUpward,
+                    contentDescription = stringResource(R.string.toggle_sort_direction, text))
+            }
             RadioButton(
                 selected = selected,
                 onClick = null
@@ -361,7 +351,7 @@ private fun SwitchSettingItem(
         color = MaterialTheme.colorScheme.surface
     ) {
         Row(
-            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 2.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(16.dp)
         ) {

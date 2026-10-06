@@ -16,6 +16,7 @@ class FolderSummaryTest {
             assertTrue(newest.setLastModified(future))
             val summary = root.folderSummary()
             assertEquals(42L, summary.bytes)
+            assertEquals(2L, summary.fileCount)
             assertEquals(newest.lastModified(), summary.lastUpdated)
             assertTrue(summary.complete)
         } finally { root.deleteRecursively() }
@@ -26,6 +27,7 @@ class FolderSummaryTest {
         try {
             val summary = root.folderSummary()
             assertEquals(0L, summary.bytes)
+            assertEquals(0L, summary.fileCount)
             assertEquals(root.lastModified(), summary.lastUpdated)
             assertTrue(summary.complete)
         } finally { root.deleteRecursively() }

@@ -11,6 +11,7 @@ import com.nixplorer.App.Companion.globalClass
 import com.nixplorer.R
 import com.nixplorer.common.ui.SheetEntryField
 import com.nixplorer.common.ui.TextEntryTopSheet
+import com.nixplorer.common.ui.SheetActionButton
 import com.nixplorer.screen.main.tab.files.FilesTab
 import com.nixplorer.screen.main.tab.files.holder.LocalFileHolder
 import java.io.File
@@ -30,7 +31,7 @@ fun JumpToPathDialog(show: Boolean, onDismiss: () -> Unit = {}) {
         SheetEntryField(path, { path = it }, stringResource(R.string.destination_path), focus,
             error = if (path.isNotBlank() && !valid) stringResource(R.string.invalid_path) else "",
             canSubmit = valid, onSubmit = ::open)
-        Button(onClick = ::open, enabled = valid, modifier = Modifier.fillMaxWidth()) {
+        SheetActionButton(onClick = ::open, enabled = valid, modifier = Modifier.fillMaxWidth()) {
             Text(stringResource(R.string.open))
         }
     }

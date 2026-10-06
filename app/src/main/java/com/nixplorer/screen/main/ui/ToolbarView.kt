@@ -9,6 +9,11 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.height
+import androidx.compose.material.icons.rounded.FolderOpen
+import androidx.compose.material.icons.rounded.SdStorage
+import com.nixplorer.screen.main.tab.files.misc.StorageDeviceType.INTERNAL_STORAGE
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.ui.unit.dp
 import androidx.compose.runtime.LaunchedEffect
@@ -94,26 +99,37 @@ fun Toolbar(
                 Icon(imageVector = Icons.Rounded.Menu, contentDescription = stringResource(R.string.storage))
             }
             DropdownMenu(expanded = showStorage, onDismissRequest = { showStorage = false },
-                modifier = Modifier.widthIn(min = 280.dp, max = 360.dp),
+                modifier = Modifier.widthIn(min = 240.dp, max = 288.dp),
                 containerColor = MaterialTheme.colorScheme.surfaceContainerHigh) {
-                Text(stringResource(R.string.storage), Modifier.padding(horizontal = 20.dp, vertical = 12.dp), style = MaterialTheme.typography.titleMedium)
+                Text(stringResource(R.string.storage), Modifier.padding(horizontal = 16.dp, vertical = 6.dp), style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
                 if (loadingStorage) LinearProgressIndicator(Modifier.fillMaxWidth())
                 storage.forEach { device ->
-                    StorageDeviceView(device) {
-                        showStorage = false
-                        globalClass.mainActivityManager.replaceCurrentTabWith(FilesTab(device.contentHolder))
-                    }
-                    Text(stringResource(R.string.analysis_free_of_total,
-                        (device.totalSize - device.usedSize).coerceAtLeast(0).toFormattedSize(), device.totalSize.toFormattedSize()),
-                        Modifier.padding(start = 60.dp, end = 16.dp, bottom = 12.dp), style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    DropdownMenuItem(
+                        text = {
+                            Column(Modifier.padding(vertical = 6.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                                Text(device.title, style = MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                Text(stringResource(R.string.analysis_free_of_total,
+                                    (device.totalSize - device.usedSize).coerceAtLeast(0).toFormattedSize(), device.totalSize.toFormattedSize()),
+                                    style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                val fraction = if (device.totalSize > 0) (device.usedSize.toFloat() / device.totalSize).coerceIn(0f, 1f) else 0f
+                                LinearProgressIndicator(progress = { fraction }, modifier = Modifier.fillMaxWidth().height(3.dp),
+                                    color = if (fraction > 0.85f) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary)
+                            }
+                        },
+                        leadingIcon = { Icon(if (device.type == INTERNAL_STORAGE) Icons.Rounded.FolderOpen else Icons.Rounded.SdStorage, null, Modifier.size(20.dp)) },
+                        onClick = {
+                            showStorage = false
+                            globalClass.mainActivityManager.replaceCurrentTabWith(FilesTab(device.contentHolder))
+                        }
+                    )
                 }
                 HorizontalDivider()
-                DropdownMenuItem(text = { Text(stringResource(R.string.analyze_storage)) },
+                DropdownMenuItem(text = { Text(stringResource(R.string.analyze_storage), style = MaterialTheme.typography.bodyMedium) },
                     onClick = {
                         showStorage = false
                         context.startActivity(Intent(context, com.nixplorer.screen.storage.StorageAnalyzerActivity::class.java))
-                    }, leadingIcon = { Icon(Icons.Rounded.ViewComfy, null) })
+                    }, leadingIcon = { Icon(Icons.Rounded.ViewComfy, null, Modifier.size(20.dp)) })
             }
         }
 

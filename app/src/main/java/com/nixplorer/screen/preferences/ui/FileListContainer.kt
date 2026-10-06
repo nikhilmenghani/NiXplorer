@@ -4,6 +4,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Height
 import androidx.compose.material.icons.rounded.HideSource
 import androidx.compose.material.icons.rounded.Numbers
+import androidx.compose.material.icons.rounded.Schedule
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
@@ -19,6 +20,13 @@ fun FileListContainer() {
     val prefs = globalClass.preferencesManager
 
     Container(title = stringResource(R.string.file_list)) {
+        PreferenceItem(
+            label = stringResource(R.string.relative_modified_time),
+            supportingText = stringResource(R.string.relative_modified_time_description),
+            icon = Icons.Rounded.Schedule,
+            switchState = prefs.relativeModifiedTime,
+            onSwitchChange = { prefs.relativeModifiedTime = it }
+        )
         PreferenceItem(
             label = stringResource(R.string.file_list_size),
             supportingText = when (prefs.itemSize) {

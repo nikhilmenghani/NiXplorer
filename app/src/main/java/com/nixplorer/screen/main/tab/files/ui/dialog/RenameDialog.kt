@@ -1,4 +1,5 @@
 package com.nixplorer.screen.main.tab.files.ui.dialog
+import com.nixplorer.common.ui.SheetActionButton
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.isSystemInDarkTheme
@@ -122,7 +123,7 @@ fun RenameDialog(show: Boolean, tab: FilesTab, onDismissRequest: () -> Unit) {
     com.nixplorer.common.ui.TextEntryTopSheet(stringResource(R.string.rename), onDismissRequest) { focus ->
         com.nixplorer.common.ui.SheetEntryField(name, { name = it }, stringResource(R.string.new_name), focus,
             error, valid, ::rename)
-        Button(onClick = ::rename, enabled = valid, modifier = Modifier.fillMaxWidth()) {
+        SheetActionButton(onClick = ::rename, enabled = valid, modifier = Modifier.fillMaxWidth()) {
             Text(stringResource(R.string.rename))
         }
     }

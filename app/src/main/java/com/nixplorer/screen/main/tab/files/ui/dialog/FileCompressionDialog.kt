@@ -6,12 +6,14 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.res.stringResource
 import com.nixplorer.App.Companion.globalClass
 import com.nixplorer.R
 import com.nixplorer.common.isValidAsFileName
 import com.nixplorer.common.ui.SheetEntryField
 import com.nixplorer.common.ui.TextEntryTopSheet
+import com.nixplorer.common.ui.SheetActionButton
 import com.nixplorer.screen.main.tab.files.FilesTab
 import com.nixplorer.screen.main.tab.files.holder.LocalFileHolder
 import com.nixplorer.screen.main.tab.files.task.CompressTaskParameters
@@ -37,10 +39,10 @@ fun FileCompressionDialog(show: Boolean, tab: FilesTab, onDismissRequest: () -> 
     }
     TextEntryTopSheet(stringResource(R.string.create_archive), onDismissRequest) { focus ->
         SheetEntryField(name, { name = it }, stringResource(R.string.name), focus, error, valid, ::create)
-        Button(onClick = ::create, enabled = valid, modifier = Modifier.fillMaxWidth()) {
+        SheetActionButton(onClick = ::create, enabled = valid, modifier = Modifier.fillMaxWidth()) {
             Text(stringResource(R.string.create))
         }
-        TextButton(onClick = onDismissRequest, modifier = Modifier.fillMaxWidth()) {
+        TextButton(onClick = onDismissRequest, modifier = Modifier.fillMaxWidth(), shape = androidx.compose.foundation.shape.RoundedCornerShape(12.dp)) {
             Text(stringResource(R.string.minimize))
         }
     }

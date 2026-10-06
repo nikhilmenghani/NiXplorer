@@ -81,6 +81,17 @@ fun TextEntryTopSheet(
 }
 
 @Composable
+fun SheetActionButton(
+    onClick: () -> Unit,
+    enabled: Boolean = true,
+    modifier: Modifier = Modifier.fillMaxWidth(),
+    content: @Composable RowScope.() -> Unit
+) {
+    Button(onClick = onClick, enabled = enabled, modifier = modifier,
+        shape = RoundedCornerShape(12.dp), content = content)
+}
+
+@Composable
 fun SheetEntryField(
     value: String,
     onValueChange: (String) -> Unit,

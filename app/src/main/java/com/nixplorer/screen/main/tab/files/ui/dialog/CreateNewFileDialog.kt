@@ -3,6 +3,7 @@ package com.nixplorer.screen.main.tab.files.ui.dialog
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Text
@@ -16,6 +17,7 @@ import com.nixplorer.common.isValidAsFileName
 import com.nixplorer.common.ui.CheckableText
 import com.nixplorer.common.ui.SheetEntryField
 import com.nixplorer.common.ui.TextEntryTopSheet
+import com.nixplorer.common.ui.SheetActionButton
 import com.nixplorer.screen.main.tab.files.FilesTab
 import kotlinx.coroutines.launch
 
@@ -72,7 +74,7 @@ fun CreateNewFileDialog(show: Boolean, tab: FilesTab, onDismissRequest: () -> Un
         if (folder) CheckableText(checked = openFolder, onCheckedChange = { openFolder = it }) {
             Text(stringResource(R.string.open_created_folder))
         }
-        Button(onClick = ::create, enabled = canSubmit, modifier = Modifier.fillMaxWidth()) {
+        SheetActionButton(onClick = ::create, enabled = canSubmit, modifier = Modifier.fillMaxWidth()) {
             Text(stringResource(R.string.create))
         }
     }

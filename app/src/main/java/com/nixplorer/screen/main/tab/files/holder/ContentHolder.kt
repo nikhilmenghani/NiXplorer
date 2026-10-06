@@ -5,6 +5,7 @@ import com.nixplorer.App.Companion.globalClass
 import com.nixplorer.R
 import com.nixplorer.common.emptyString
 import com.nixplorer.common.toFormattedDate
+import com.nixplorer.common.toModifiedTime
 import com.nixplorer.screen.main.tab.files.misc.ContentCount
 import com.nixplorer.screen.main.tab.files.misc.FileMimeType.apkFileType
 import com.nixplorer.screen.main.tab.files.misc.SortingMethod.SORT_BY_DATE
@@ -149,6 +150,6 @@ abstract class ContentHolder {
     }
 
     fun getLastModifiedDate(): String {
-        return lastModified.toFormattedDate(hideSeconds = true)
+        return lastModified.toModifiedTime()
     }
 }

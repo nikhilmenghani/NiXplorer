@@ -70,7 +70,7 @@ class PreferencesManager {
 
     var showFolderContentCount by prefMutableState(
         keyName = "showFolderContentCount",
-        defaultValue = false,
+        defaultValue = true,
         getPreferencesKey = { booleanPreferencesKey(it) }
     )
 
@@ -150,6 +150,10 @@ class PreferencesManager {
     var showRecentFiles by prefMutableState(
         keyName = "showRecentFiles",
         defaultValue = false,
+        getPreferencesKey = { booleanPreferencesKey(it) }
+    )
+    var relativeModifiedTime by prefMutableState(
+        keyName = "relativeModifiedTime", defaultValue = false,
         getPreferencesKey = { booleanPreferencesKey(it) }
     )
     var useGlobalListSizing by prefMutableState(
@@ -272,6 +276,12 @@ class PreferencesManager {
         defaultValue = false,
         getPreferencesKey = { booleanPreferencesKey(it) }
     )
+    var sortDirectionMask by prefMutableState(
+        keyName = "sortDirectionMask", defaultValue = 0, getPreferencesKey = { intPreferencesKey(it) }
+    )
+    var configuredSortDirections by prefMutableState(
+        keyName = "configuredSortDirections", defaultValue = 0, getPreferencesKey = { intPreferencesKey(it) }
+    )
 
     fun getSortingPrefsFor(content: ContentHolder): FileSortingPrefs {
         return runBlocking {
@@ -284,7 +294,9 @@ class PreferencesManager {
     fun getDefaultSortingPrefs() = FileSortingPrefs(
         sortMethod = defaultSortMethod,
         showFoldersFirst = showFoldersFirst,
-        reverseSorting = reverse
+        reverseSorting = reverse,
+        directionMask = sortDirectionMask,
+        configuredDirections = configuredSortDirections
     )
 
     fun getDefaultViewConfigPrefs(): ViewConfigs {

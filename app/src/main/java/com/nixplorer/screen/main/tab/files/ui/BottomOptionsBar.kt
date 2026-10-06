@@ -22,6 +22,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -71,6 +72,7 @@ import com.nixplorer.screen.main.tab.files.task.CopyTask
 @Composable
 fun BottomOptionsBar(tab: FilesTab) {
     val state = tab.bottomOptionsBarState.collectAsState().value
+    val navigationSlots = if (!state.showEmptyRecycleBinButton && state.showCreateNewContentButton) 5 else 4
     var showMore by remember(tab) { mutableStateOf(false) }
     var showResize by remember(tab) { mutableStateOf(false) }
     fun changeSize(rowDelta: Int = 0, fontDelta: Int = 0) {
@@ -93,6 +95,7 @@ fun BottomOptionsBar(tab: FilesTab) {
                 exit = slideOutVertically { it } + shrinkVertically(shrinkTowards = Alignment.Bottom) + fadeOut()) {
                 Row(Modifier.widthIn(max = 448.dp).fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    repeat(navigationSlots - 4) { Spacer(Modifier.weight(1f)) }
                     BottomOptionsBarButton(Icons.Rounded.ViewCompact, stringResource(R.string.smaller_rows), enabled = tab.viewConfig.itemSize > 0) { changeSize(rowDelta = -1) }
                     BottomOptionsBarButton(Icons.Rounded.ViewAgenda, stringResource(R.string.larger_rows), enabled = tab.viewConfig.itemSize < 4) { changeSize(rowDelta = 1) }
                     BottomOptionsBarButton(Icons.Rounded.TextDecrease, stringResource(R.string.smaller_text), enabled = getFileListFontSize(tab.viewConfig.itemSize, tab.viewConfig.fontSize) > 8) { changeSize(fontDelta = -2) }
@@ -101,6 +104,7 @@ fun BottomOptionsBar(tab: FilesTab) {
             }
             Row(Modifier.widthIn(max = 448.dp).fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                repeat(navigationSlots - 2) { Spacer(Modifier.weight(1f)) }
                 BottomOptionsBarButton(Icons.Rounded.Bookmark, stringResource(R.string.bookmarks)) { tab.toggleBookmarksDialog(true) }
                 BottomOptionsBarButton(Icons.Rounded.Tune, stringResource(R.string.resize), selected = showResize) { showResize = !showResize }
             }

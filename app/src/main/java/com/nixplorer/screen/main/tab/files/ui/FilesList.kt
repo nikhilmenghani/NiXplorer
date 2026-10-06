@@ -580,18 +580,24 @@ private fun FileDetails(
 ) {
     var details by remember(
         key1 = currentItemPath,
-        key2 = item.lastModified
+        key2 = item.lastModified,
+        key3 = globalClass.preferencesManager.relativeModifiedTime to globalClass.preferencesManager.showFolderContentCount
     ) { mutableStateOf(item.getInitialDetails()) }
 
     LaunchedEffect(
         key1 = currentItemPath,
-        key2 = item.lastModified
+        key2 = item.lastModified,
+        key3 = globalClass.preferencesManager.relativeModifiedTime to globalClass.preferencesManager.showFolderContentCount
     ) {
         run {
             val det = withContext(IO) {
                 item.getDetails()
             }
             details = det
+            while (globalClass.preferencesManager.relativeModifiedTime) {
+                kotlinx.coroutines.delay(60_000)
+                details = withContext(IO) { item.getDetails() }
+            }
         }
     }
 
@@ -619,12 +625,14 @@ private fun FileDetailsCompact(
     Isolate {
         var details by remember(
             key1 = currentItemPath,
-            key2 = item.lastModified
+            key2 = item.lastModified,
+            key3 = globalClass.preferencesManager.relativeModifiedTime to globalClass.preferencesManager.showFolderContentCount
         ) { mutableStateOf(item.getInitialDetails()) }
 
         LaunchedEffect(
             key1 = currentItemPath,
-            key2 = item.lastModified
+            key2 = item.lastModified,
+            key3 = globalClass.preferencesManager.relativeModifiedTime to globalClass.preferencesManager.showFolderContentCount
         ) {
             run {
                 val det = withContext(IO) { item.getDetails() }

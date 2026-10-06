@@ -11,6 +11,7 @@ import com.nixplorer.R
 import com.nixplorer.common.asCodeEditorCursorCoordinates
 import com.nixplorer.common.ui.SheetEntryField
 import com.nixplorer.common.ui.TextEntryTopSheet
+import com.nixplorer.common.ui.SheetActionButton
 import io.github.rosemoe.sora.widget.CodeEditor
 
 @Composable
@@ -28,7 +29,7 @@ fun JumpToPositionDialog(codeEditor: CodeEditor, onDismiss: () -> Unit) {
         SheetEntryField(input, { input = it }, stringResource(R.string.jump_to_position_label), focus,
             error = if (input.isNotBlank() && !valid) stringResource(R.string.invalid_position) else "",
             canSubmit = valid, onSubmit = ::go)
-        Button(onClick = ::go, enabled = valid, modifier = Modifier.fillMaxWidth()) {
+        SheetActionButton(onClick = ::go, enabled = valid, modifier = Modifier.fillMaxWidth()) {
             Text(stringResource(R.string.go))
         }
     }

@@ -16,6 +16,7 @@ import com.nixplorer.common.hasParent
 import com.nixplorer.common.isNot
 import com.nixplorer.common.toFormattedSize
 import com.nixplorer.common.toFormattedDate
+import com.nixplorer.common.toModifiedTime
 import com.nixplorer.screen.main.tab.files.misc.folderSummary
 import com.nixplorer.screen.main.tab.files.FilesTab
 import com.nixplorer.screen.main.tab.files.misc.ContentCount
@@ -41,6 +42,8 @@ class LocalFileHolder(val file: File) : ContentHolder() {
     override val displayName: String by lazy { file.name }
 
     var details = emptyString
+    private var cachedFolderSummary: com.nixplorer.screen.main.tab.files.misc.FolderSummary? = null
+    private var summaryTimestamp = -1L
 
     override val isFolder: Boolean by lazy { file.isDirectory }
 
@@ -69,18 +72,20 @@ class LocalFileHolder(val file: File) : ContentHolder() {
     override suspend fun getDetails(): String {
         val separator = " | "
 
-        if (details.isNotEmpty()) return details
-
         return buildString {
             if (file.isDirectory) {
-                val summary = file.folderSummary()
-                append(summary.lastUpdated.toFormattedDate())
+                val modified = file.lastModified()
+                if (summaryTimestamp != modified) cachedFolderSummary = null
+                val summary = cachedFolderSummary ?: file.folderSummary().also { cachedFolderSummary = it }
+                summaryTimestamp = modified
+                append(summary.lastUpdated.toModifiedTime())
                 append(separator)
                 val formattedSize = summary.bytes.toFormattedSize()
                 append(if (summary.complete) formattedSize else globalClass.getString(R.string.folder_size_at_least, formattedSize))
                 if (globalClass.preferencesManager.showFolderContentCount && file.canRead()) {
                     append(separator)
-                    append(getFormattedFileCount())
+                    val count = globalClass.resources.getQuantityString(R.plurals.folder_file_count, summary.fileCount.coerceAtMost(Int.MAX_VALUE.toLong()).toInt(), summary.fileCount)
+                    append(if (summary.complete) count else globalClass.getString(R.string.folder_count_at_least, count))
                 }
             } else {
                 append(getLastModifiedDate())
@@ -248,6 +253,9 @@ class LocalFileHolder(val file: File) : ContentHolder() {
 
         val intent = Intent(Intent.ACTION_VIEW).apply {
             setDataAndType(uri, mimeType)
+            if (packageName == context.packageName && className == ImageViewerActivity::class.java.name) {
+                putExtra("image_path", file.absolutePath)
+            }
             addFlags(
                 Intent.FLAG_ACTIVITY_NEW_TASK
                         or Intent.FLAG_ACTIVITY_NEW_DOCUMENT
