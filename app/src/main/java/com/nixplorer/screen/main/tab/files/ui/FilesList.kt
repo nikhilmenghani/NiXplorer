@@ -321,7 +321,7 @@ private fun ColumnFileItem(
             Space(size = 8.dp)
 
             Column(Modifier.weight(1f)) {
-                val fontSize = getFileListFontSize(viewConfigs.itemSize)
+                val fontSize = getFileListFontSize(viewConfigs.itemSize, viewConfigs.fontSize)
 
                 Text(
                     text = item.displayName,
@@ -469,7 +469,7 @@ private fun GridFileItem(
                             )
                             .padding(4.dp)
                     ) {
-                        val fontSize = getFileListFontSize(viewConfigs.itemSize) * 0.8
+                        val fontSize = getFileListFontSize(viewConfigs.itemSize, viewConfigs.fontSize) * 0.8
                         Text(
                             text = item.displayName,
                             fontSize = fontSize.sp,
@@ -490,7 +490,7 @@ private fun GridFileItem(
             }
             if (!viewConfigs.galleryMode) {
                 Spacer(modifier = Modifier.height(4.dp))
-                val fontSize = getFileListFontSize(viewConfigs.itemSize) * 0.8
+                val fontSize = getFileListFontSize(viewConfigs.itemSize, viewConfigs.fontSize) * 0.8
                 Text(
                     text = item.displayName,
                     fontSize = fontSize.sp,
@@ -581,13 +581,13 @@ private fun FileDetails(
     var details by remember(
         key1 = currentItemPath,
         key2 = item.lastModified
-    ) { mutableStateOf(emptyString) }
+    ) { mutableStateOf(item.getInitialDetails()) }
 
     LaunchedEffect(
         key1 = currentItemPath,
         key2 = item.lastModified
     ) {
-        if (details.isEmpty()) {
+        run {
             val det = withContext(IO) {
                 item.getDetails()
             }
@@ -620,13 +620,13 @@ private fun FileDetailsCompact(
         var details by remember(
             key1 = currentItemPath,
             key2 = item.lastModified
-        ) { mutableStateOf(emptyString) }
+        ) { mutableStateOf(item.getInitialDetails()) }
 
         LaunchedEffect(
             key1 = currentItemPath,
             key2 = item.lastModified
         ) {
-            if (details.isEmpty()) {
+            run {
                 val det = withContext(IO) { item.getDetails() }
                 withContext(Dispatchers.Main) { details = det }
             }

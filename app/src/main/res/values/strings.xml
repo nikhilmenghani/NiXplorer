@@ -510,4 +510,5 @@
     <string name="analysis_system_apps">System apps</string>
     <string name="analysis_no_apps">No apps found.</string>
     <string name="open_externally">Open externally</string>
+    <string name="row_size">Row size</string>
 </resources>

@@ -94,13 +94,13 @@ fun FileOptionsMenuDialog(
                     if (selectedFilesCount > 1) {
                         "and %d more".format(selectedFilesCount - 1)
                     } else {
-                        emptyString
+                        targetContentHolder.getInitialDetails()
                     }
                 )
             }
 
             LaunchedEffect(Unit) {
-                if (details.isEmpty()) details = targetContentHolder.getDetails()
+                if (selectedFilesCount == 1) details = targetContentHolder.getDetails()
             }
 
             ItemRow(

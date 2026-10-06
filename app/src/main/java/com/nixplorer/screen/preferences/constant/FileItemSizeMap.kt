@@ -33,7 +33,7 @@ object FileItemSizeMap {
         else -> IconSize.EXTRA_LARGE
     }
 
-    fun getFileListFontSize(itemSize: Int = globalClass.preferencesManager.itemSize) = when (itemSize) {
+    fun getFileListFontSize(itemSize: Int = globalClass.preferencesManager.itemSize, customSize: Int = 0) = if (customSize > 0) customSize.coerceIn(12, 26) else when (itemSize) {
         FileItemSize.EXTRA_SMALL.ordinal -> FontSize.EXTRA_SMALL
         FileItemSize.SMALL.ordinal -> FontSize.SMALL
         FileItemSize.MEDIUM.ordinal -> FontSize.MEDIUM

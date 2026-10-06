@@ -42,6 +42,12 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.*
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.TextButton
+import com.nixplorer.screen.preferences.constant.FileItemSizeMap.getFileListFontSize
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.RectangleShape
@@ -60,6 +66,35 @@ import com.nixplorer.screen.main.tab.files.task.CopyTask
 @Composable
 fun BottomOptionsBar(tab: FilesTab) {
     val state = tab.bottomOptionsBarState.collectAsState().value
+    var showMore by remember(tab) { mutableStateOf(false) }
+    fun changeSize(rowDelta: Int = 0, fontDelta: Int = 0) {
+        val current = tab.viewConfig
+        val font = getFileListFontSize(current.itemSize, current.fontSize)
+        tab.viewConfig = current.copy(itemSize = (current.itemSize + rowDelta).coerceIn(0, 4), fontSize = (font + fontDelta).coerceIn(12, 26))
+        globalClass.preferencesManager.setViewConfigPrefsFor(tab.activeFolder, tab.viewConfig)
+    }
+
+    AnimatedVisibility(showMore && tab.selectedFiles.isEmpty()) {
+        Surface(color = MaterialTheme.colorScheme.surfaceContainer, shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp)) {
+            Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(12.dp),
+                verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                FilledTonalButton(onClick = { tab.toggleBookmarksDialog(true) }) {
+                    Icon(Icons.Rounded.Bookmark, null, Modifier.size(20.dp))
+                    Text(stringResource(R.string.bookmarks), Modifier.padding(start = 6.dp))
+                }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(stringResource(R.string.row_size), style = MaterialTheme.typography.labelLarge)
+                    TextButton(enabled = tab.viewConfig.itemSize > 0, onClick = { changeSize(rowDelta = -1) }) { Text("−") }
+                    TextButton(enabled = tab.viewConfig.itemSize < 4, onClick = { changeSize(rowDelta = 1) }) { Text("+") }
+                }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(stringResource(R.string.font_size), style = MaterialTheme.typography.labelLarge)
+                    TextButton(enabled = getFileListFontSize(tab.viewConfig.itemSize, tab.viewConfig.fontSize) > 12, onClick = { changeSize(fontDelta = -2) }) { Text("A−") }
+                    TextButton(enabled = getFileListFontSize(tab.viewConfig.itemSize, tab.viewConfig.fontSize) < 26, onClick = { changeSize(fontDelta = 2) }) { Text("A+") }
+                }
+            }
+        }
+    }
 
     AnimatedVisibility(
         visible = state.showQuickOptions && tab.selectedFiles.isNotEmpty(),
@@ -214,8 +249,8 @@ fun BottomOptionsBar(tab: FilesTab) {
                     tab.toggleSortingMenu(true)
                 }
 
-                BottomOptionsBarButton(Icons.Rounded.Bookmark, stringResource(R.string.bookmarks)) {
-                    tab.toggleBookmarksDialog(true)
+                BottomOptionsBarButton(Icons.Rounded.MoreVert, stringResource(R.string.options)) {
+                    showMore = !showMore
                 }
             }
         }

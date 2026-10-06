@@ -61,6 +61,7 @@ abstract class ContentHolder {
     open suspend fun getDetails(): String {
         return emptyString
     }
+    open fun getInitialDetails(): String = getLastModifiedDate()
 
     /**
      * Checks if the content holder is a valid content.
