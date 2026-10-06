@@ -21,6 +21,10 @@ import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.OpenInNew
+import androidx.compose.ui.res.stringResource
+import com.nixplorer.R
+import com.nixplorer.common.openExternally
 import androidx.compose.material.icons.automirrored.filled.VolumeOff
 import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material.icons.filled.Forward10
@@ -168,6 +172,11 @@ fun VideoPlayerScreen(
                     },
                     onBackPressed = onBackPressed,
                     onToggleMute = { videoPlayerInstance.toggleMute() },
+                    onOpenExternally = {
+                        if (openExternally(context, videoUri, "video/*")) {
+                            videoPlayerInstance.getPlayer()?.pause()
+                        }
+                    },
                 )
             }
 
@@ -197,7 +206,8 @@ fun VideoControls(
     onSeekForward: () -> Unit,
     onSeekBackward: () -> Unit,
     onSeek: (Long) -> Unit,
-    onBackPressed: () -> Unit
+    onBackPressed: () -> Unit,
+    onOpenExternally: () -> Unit
 ) {
     val defaultColor = colorScheme.surface
 
@@ -221,6 +231,7 @@ fun VideoControls(
             playerState = state,
             onBackPressed = onBackPressed,
             onToggleMute = onToggleMute,
+            onOpenExternally = onOpenExternally,
             modifier = Modifier.align(Alignment.TopStart)
         )
 
@@ -248,6 +259,7 @@ fun TopBar(
     playerState: VideoPlayerState,
     onBackPressed: () -> Unit,
     onToggleMute: () -> Unit,
+    onOpenExternally: () -> Unit,
     modifier: Modifier,
 ) {
     Row(
@@ -287,6 +299,9 @@ fun TopBar(
                 contentDescription = null,
                 tint = colorScheme.onSurface
             )
+        }
+        IconButton(onClick = onOpenExternally) {
+            Icon(Icons.AutoMirrored.Filled.OpenInNew, stringResource(R.string.open_externally), tint = colorScheme.onSurface)
         }
     }
 }

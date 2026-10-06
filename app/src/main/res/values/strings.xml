@@ -497,4 +497,17 @@
     <string name="back">Back</string>
     <string name="uninstall">Uninstall</string>
     <string name="storage_cleanup_hint">Cleanup runs in the background. Refresh when it finishes. Items in the recycle bin still take up space.</string>
+    <string name="analysis_title">Storage analysis</string>
+    <string name="analysis_about">About storage cleanup</string>
+    <string name="analysis_folders">Folders</string>
+    <string name="analysis_free_of_total">%1$s free of %2$s</string>
+    <string name="analysis_item_actions">Actions for %1$s</string>
+    <string name="analysis_details">Show / hide details</string>
+    <string name="analysis_file_summary">%1$d files · %2$s scanned · Largest first</string>
+    <string name="analysis_partial">%1$d protected folders skipped. App storage is available in Apps.</string>
+    <string name="analysis_largest_apps">Largest apps</string>
+    <string name="analysis_apps_summary">%1$d apps · Largest first</string>
+    <string name="analysis_system_apps">System apps</string>
+    <string name="analysis_no_apps">No apps found.</string>
+    <string name="open_externally">Open externally</string>
 </resources>

@@ -208,6 +208,8 @@ class LocalFileHolder(val file: File) : ContentHolder() {
         timestamp = lastModified
     }
 
+    fun openExternally(context: Context) = com.nixplorer.common.openExternally(context, createUri(), mimeType)
+
     fun getAppsHandlingFile(mimeType: String = emptyString): List<OpenWithActivityHolder> {
         val packageManager: PackageManager = globalClass.packageManager
 

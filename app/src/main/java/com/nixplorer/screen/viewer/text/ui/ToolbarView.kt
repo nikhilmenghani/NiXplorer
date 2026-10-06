@@ -9,6 +9,10 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
+import androidx.compose.material.icons.automirrored.rounded.OpenInNew
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
+import com.nixplorer.common.openExternally
 import androidx.compose.material.icons.automirrored.rounded.Redo
 import androidx.compose.material.icons.automirrored.rounded.Undo
 import androidx.compose.material.icons.rounded.Menu
@@ -40,6 +44,7 @@ fun ToolbarView(
     onBackPressedDispatcher: OnBackPressedDispatcher
 ) {
     var showOptionsMenu by remember { mutableStateOf(false) }
+    val context = LocalContext.current
 
     Row(
         modifier = Modifier
@@ -109,6 +114,9 @@ fun ToolbarView(
             ) {
                 showOptionsMenu = false
             }
+        }
+        IconButton(onClick = { openExternally(context, textViewerInstance.uri, context.contentResolver.getType(textViewerInstance.uri) ?: "text/plain") }) {
+            Icon(Icons.AutoMirrored.Rounded.OpenInNew, stringResource(R.string.open_externally))
         }
     }
 }

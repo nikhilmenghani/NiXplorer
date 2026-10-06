@@ -8,11 +8,11 @@ import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 
-internal data class StorageEntry(val file: File, val bytes: Long, val complete: Boolean = true)
-internal data class FileStorageReport(val files: List<StorageEntry>, val folders: List<StorageEntry>, val bytes: Long, val fileCount: Long, val skippedFolders: Int)
+internal data class StorageEntry(val file: File, val bytes: Long, val complete: Boolean = true) : java.io.Serializable
+internal data class FileStorageReport(val files: List<StorageEntry>, val folders: List<StorageEntry>, val bytes: Long, val fileCount: Long, val skippedFolders: Int) : java.io.Serializable
 private data class FolderFrame(val file: File, val children: Array<File>, var index: Int = 0, var bytes: Long = 0, var complete: Boolean = true)
 
-internal suspend fun analyzeFiles(root: File, limit: Int = 100, onProgress: (Long) -> Unit = {}): FileStorageReport = withContext(Dispatchers.IO) {
+internal suspend fun analyzeFiles(root: File, limit: Int = 100, onSnapshot: (File) -> Unit = {}, onProgress: (Long) -> Unit = {}): FileStorageReport = withContext(Dispatchers.IO) {
     require(limit > 0)
     val files = PriorityQueue<StorageEntry>(compareBy { it.bytes })
     val folders = PriorityQueue<StorageEntry>(compareBy { it.bytes })
@@ -25,6 +25,7 @@ internal suspend fun analyzeFiles(root: File, limit: Int = 100, onProgress: (Lon
     var skipped = 0
     val frames = ArrayDeque<FolderFrame>()
     fun frame(file: File): FolderFrame {
+        onSnapshot(file)
         val children = file.listFiles()
         if (children == null) skipped++
         return FolderFrame(file, children ?: emptyArray(), complete = children != null)
@@ -40,6 +41,7 @@ internal suspend fun analyzeFiles(root: File, limit: Int = 100, onProgress: (Lon
             if (Files.isSymbolicLink(child.toPath())) continue
             if (child.isDirectory) frames.add(frame(child))
             else if (child.isFile) {
+                onSnapshot(child)
                 val bytes = child.length()
                 parent.bytes += bytes
                 count++

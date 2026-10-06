@@ -71,6 +71,8 @@ import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.material.icons.automirrored.filled.OpenInNew
+import com.nixplorer.common.openExternally
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -284,6 +286,9 @@ fun ImageViewerScreen(instance: ViewerInstance) {
                             }
                         },
                         actions = {
+                            IconButton(onClick = { openExternally(context, instance.uri, "image/*") }) {
+                                Icon(Icons.AutoMirrored.Filled.OpenInNew, stringResource(R.string.open_externally))
+                            }
                             IconButton(onClick = { showInfo = true }) {
                                 Icon(
                                     Icons.Default.Info,

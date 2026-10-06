@@ -23,6 +23,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import com.nixplorer.common.openExternally
 import androidx.compose.ui.unit.dp
 import com.nixplorer.App.Companion.globalClass
 import com.nixplorer.R
@@ -41,6 +43,7 @@ import net.engawapg.lib.zoomable.zoomableWithScroll
 @OptIn(ExperimentalZoomableApi::class)
 @Composable
 fun PdfViewerContent(instance: PdfViewerInstance, onBackPress: () -> Unit) {
+    val context = LocalContext.current
     BoxWithConstraints(
         Modifier.fillMaxSize(),
         contentAlignment = Alignment.TopCenter
@@ -168,6 +171,7 @@ fun PdfViewerContent(instance: PdfViewerInstance, onBackPress: () -> Unit) {
                     visible = showToolbars,
                     title = instance.metadata.name,
                     onBackClick = onBackPress,
+                    onOpenExternally = { openExternally(context, instance.uri, "application/pdf") },
                     onInfoClick = {
                         showInfoDialog = true
                     }

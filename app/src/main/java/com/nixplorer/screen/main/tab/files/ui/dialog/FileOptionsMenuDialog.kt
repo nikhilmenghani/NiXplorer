@@ -223,6 +223,11 @@ fun FileOptionsMenuDialog(
             }
 
             if (isSingleFile && targetContentHolder is LocalFileHolder) {
+                FileOption(Icons.AutoMirrored.Rounded.OpenInNew, stringResource(R.string.open_externally)) {
+                    onDismissRequest()
+                    targetContentHolder.openExternally(context)
+                    tab.unselectAllFiles()
+                }
                 FileOption(
                     Icons.AutoMirrored.Rounded.OpenInNew,
                     stringResource(R.string.open_with)

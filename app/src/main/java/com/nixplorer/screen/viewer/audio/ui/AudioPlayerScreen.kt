@@ -32,6 +32,8 @@ import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.VolumeDown
+import androidx.compose.material.icons.automirrored.filled.OpenInNew
+import com.nixplorer.common.openExternally
 import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Equalizer
@@ -152,6 +154,9 @@ fun MusicPlayerScreen(
                     onEqualizerClick = { audioPlayerInstance.toggleEqualizer() },
                     onVolumeClick = { audioPlayerInstance.toggleVolume() },
                     onCloseClick = onClosed,
+                    onOpenExternally = {
+                        if (openExternally(context, audioPlayerInstance.uri, "audio/*")) onClosed()
+                    },
                     audioPlayerColorScheme = customColorScheme
                 )
 
@@ -237,6 +242,7 @@ fun TopControls(
     onEqualizerClick: () -> Unit,
     onVolumeClick: () -> Unit,
     onCloseClick: () -> Unit,
+    onOpenExternally: () -> Unit,
     audioPlayerColorScheme: AudioPlayerColorScheme,
 ) {
     Row(
@@ -255,6 +261,9 @@ fun TopControls(
         Spacer(Modifier.weight(1f))
 
         Row {
+            IconButton(onClick = onOpenExternally) {
+                Icon(Icons.AutoMirrored.Filled.OpenInNew, stringResource(R.string.open_externally), tint = audioPlayerColorScheme.tintColor)
+            }
             IconButton(onClick = onVolumeClick) {
                 Icon(
                     Icons.AutoMirrored.Filled.VolumeUp,

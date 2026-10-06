@@ -18,6 +18,9 @@ import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
+import androidx.compose.material.icons.automirrored.rounded.OpenInNew
+import androidx.compose.ui.res.stringResource
+import com.nixplorer.R
 import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -35,7 +38,8 @@ fun TopToolbar(
     visible: Boolean,
     title: String,
     onBackClick: () -> Unit,
-    onInfoClick: () -> Unit
+    onInfoClick: () -> Unit,
+    onOpenExternally: () -> Unit
 ) {
     AnimatedVisibility(
         visible = visible,
@@ -93,6 +97,9 @@ fun TopToolbar(
                         contentDescription = null,
                         tint = colorScheme.onSurface
                     )
+                }
+                IconButton(onClick = onOpenExternally) {
+                    Icon(Icons.AutoMirrored.Rounded.OpenInNew, stringResource(R.string.open_externally), tint = colorScheme.onSurface)
                 }
             }
         }
