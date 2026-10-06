@@ -5,6 +5,10 @@ import androidx.compose.animation.expandIn
 import androidx.compose.animation.shrinkOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.layout.Box
@@ -43,10 +47,11 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.*
-import androidx.compose.foundation.horizontalScroll
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.material3.FilledTonalButton
-import androidx.compose.material3.TextButton
+import androidx.compose.material.icons.rounded.TextDecrease
+import androidx.compose.material.icons.rounded.TextIncrease
+import androidx.compose.material.icons.rounded.ViewCompact
+import androidx.compose.material.icons.rounded.ViewAgenda
+import androidx.compose.material.icons.rounded.Tune
 import com.nixplorer.screen.preferences.constant.FileItemSizeMap.getFileListFontSize
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -67,31 +72,37 @@ import com.nixplorer.screen.main.tab.files.task.CopyTask
 fun BottomOptionsBar(tab: FilesTab) {
     val state = tab.bottomOptionsBarState.collectAsState().value
     var showMore by remember(tab) { mutableStateOf(false) }
+    var showResize by remember(tab) { mutableStateOf(false) }
     fun changeSize(rowDelta: Int = 0, fontDelta: Int = 0) {
         val current = tab.viewConfig
         val font = getFileListFontSize(current.itemSize, current.fontSize)
-        tab.viewConfig = current.copy(itemSize = (current.itemSize + rowDelta).coerceIn(0, 4), fontSize = (font + fontDelta).coerceIn(12, 26))
-        globalClass.preferencesManager.setViewConfigPrefsFor(tab.activeFolder, tab.viewConfig)
+        val prefs = globalClass.preferencesManager
+        prefs.itemSize = (current.itemSize + rowDelta).coerceIn(0, 4)
+        prefs.listFontSize = (font + fontDelta).coerceIn(8, 26)
+        prefs.useGlobalListSizing = true
     }
 
-    AnimatedVisibility(showMore && tab.selectedFiles.isEmpty()) {
-        Surface(color = MaterialTheme.colorScheme.surfaceContainer, shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp)) {
-            Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(12.dp),
-                verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                FilledTonalButton(onClick = { tab.toggleBookmarksDialog(true) }) {
-                    Icon(Icons.Rounded.Bookmark, null, Modifier.size(20.dp))
-                    Text(stringResource(R.string.bookmarks), Modifier.padding(start = 6.dp))
+    AnimatedVisibility(showMore && tab.selectedFiles.isEmpty(),
+        enter = slideInVertically { it } + expandVertically(expandFrom = Alignment.Bottom) + fadeIn(),
+        exit = slideOutVertically { it } + shrinkVertically(shrinkTowards = Alignment.Bottom) + fadeOut()) {
+        Column(Modifier.fillMaxWidth().pointerInput(Unit) {
+            detectHorizontalDragGestures { change, _ -> change.consume() }
+        }, horizontalAlignment = Alignment.CenterHorizontally) {
+            AnimatedVisibility(showResize,
+                enter = slideInVertically { it } + expandVertically(expandFrom = Alignment.Bottom) + fadeIn(),
+                exit = slideOutVertically { it } + shrinkVertically(shrinkTowards = Alignment.Bottom) + fadeOut()) {
+                Row(Modifier.widthIn(max = 448.dp).fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    BottomOptionsBarButton(Icons.Rounded.ViewCompact, stringResource(R.string.smaller_rows), enabled = tab.viewConfig.itemSize > 0) { changeSize(rowDelta = -1) }
+                    BottomOptionsBarButton(Icons.Rounded.ViewAgenda, stringResource(R.string.larger_rows), enabled = tab.viewConfig.itemSize < 4) { changeSize(rowDelta = 1) }
+                    BottomOptionsBarButton(Icons.Rounded.TextDecrease, stringResource(R.string.smaller_text), enabled = getFileListFontSize(tab.viewConfig.itemSize, tab.viewConfig.fontSize) > 8) { changeSize(fontDelta = -2) }
+                    BottomOptionsBarButton(Icons.Rounded.TextIncrease, stringResource(R.string.larger_text), enabled = getFileListFontSize(tab.viewConfig.itemSize, tab.viewConfig.fontSize) < 26) { changeSize(fontDelta = 2) }
                 }
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(stringResource(R.string.row_size), style = MaterialTheme.typography.labelLarge)
-                    TextButton(enabled = tab.viewConfig.itemSize > 0, onClick = { changeSize(rowDelta = -1) }) { Text("−") }
-                    TextButton(enabled = tab.viewConfig.itemSize < 4, onClick = { changeSize(rowDelta = 1) }) { Text("+") }
-                }
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(stringResource(R.string.font_size), style = MaterialTheme.typography.labelLarge)
-                    TextButton(enabled = getFileListFontSize(tab.viewConfig.itemSize, tab.viewConfig.fontSize) > 12, onClick = { changeSize(fontDelta = -2) }) { Text("A−") }
-                    TextButton(enabled = getFileListFontSize(tab.viewConfig.itemSize, tab.viewConfig.fontSize) < 26, onClick = { changeSize(fontDelta = 2) }) { Text("A+") }
-                }
+            }
+            Row(Modifier.widthIn(max = 448.dp).fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                BottomOptionsBarButton(Icons.Rounded.Bookmark, stringResource(R.string.bookmarks)) { tab.toggleBookmarksDialog(true) }
+                BottomOptionsBarButton(Icons.Rounded.Tune, stringResource(R.string.resize), selected = showResize) { showResize = !showResize }
             }
         }
     }
@@ -251,6 +262,7 @@ fun BottomOptionsBar(tab: FilesTab) {
 
                 BottomOptionsBarButton(Icons.Rounded.MoreVert, stringResource(R.string.options)) {
                     showMore = !showMore
+                    if (!showMore) showResize = false
                 }
             }
         }
@@ -261,14 +273,17 @@ fun BottomOptionsBar(tab: FilesTab) {
 fun RowScope.BottomOptionsBarButton(
     imageVector: ImageVector,
     text: String,
+    enabled: Boolean = true,
+    selected: Boolean = false,
     onClick: () -> Unit
 ) {
     Surface(
         onClick = onClick,
+        enabled = enabled,
         modifier = Modifier.weight(1f).semantics { contentDescription = text },
         shape = RoundedCornerShape(20.dp),
-        color = MaterialTheme.colorScheme.surfaceContainerLow,
-        contentColor = MaterialTheme.colorScheme.onSurfaceVariant
+        color = if (selected) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surfaceContainerLow,
+        contentColor = if (!enabled) MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.38f) else if (selected) MaterialTheme.colorScheme.onSecondaryContainer else MaterialTheme.colorScheme.onSurfaceVariant
     ) {
         Column(
             modifier = Modifier.padding(horizontal = 2.dp, vertical = 10.dp),

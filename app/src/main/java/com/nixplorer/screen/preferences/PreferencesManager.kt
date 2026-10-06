@@ -152,6 +152,14 @@ class PreferencesManager {
         defaultValue = false,
         getPreferencesKey = { booleanPreferencesKey(it) }
     )
+    var useGlobalListSizing by prefMutableState(
+        keyName = "useGlobalListSizing", defaultValue = false,
+        getPreferencesKey = { booleanPreferencesKey(it) }
+    )
+    var listFontSize by prefMutableState(
+        keyName = "listFontSize", defaultValue = 0,
+        getPreferencesKey = { intPreferencesKey(it) }
+    )
 
     var excludedPathsFromRecentFiles by prefMutableState(
         keyName = "excludedPathFromRecentFiles",

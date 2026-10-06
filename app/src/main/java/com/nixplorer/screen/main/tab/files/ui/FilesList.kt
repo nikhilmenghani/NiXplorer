@@ -598,7 +598,7 @@ private fun FileDetails(
     Text(
         modifier = Modifier.alpha(0.7f),
         text = details,
-        fontSize = (fontSize - 4).sp,
+        fontSize = (fontSize - 4).coerceAtLeast(6).sp,
         maxLines = 1,
         lineHeight = (fontSize + 2).sp,
         overflow = TextOverflow.Ellipsis,

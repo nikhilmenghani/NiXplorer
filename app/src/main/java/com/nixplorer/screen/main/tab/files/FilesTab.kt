@@ -70,9 +70,15 @@ class FilesTab(
     val contentListStates = hashMapOf<String, LazyGridState>()
     var activeListState by mutableStateOf(LazyGridState())
 
-    var viewConfig by mutableStateOf(
+    private var folderViewConfig by mutableStateOf(
         globalClass.preferencesManager.getViewConfigPrefsFor(activeFolder)
     )
+    var viewConfig: com.nixplorer.screen.main.tab.files.misc.ViewConfigs
+        get() {
+            val prefs = globalClass.preferencesManager
+            return if (prefs.useGlobalListSizing) folderViewConfig.copy(itemSize = prefs.itemSize, fontSize = prefs.listFontSize) else folderViewConfig
+        }
+        set(value) { folderViewConfig = value }
 
     val highlightedFiles = arrayListOf<String>()
     val selectedFiles = linkedMapOf<String, ContentHolder>()

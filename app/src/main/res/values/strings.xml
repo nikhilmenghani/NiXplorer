@@ -511,4 +511,9 @@
     <string name="analysis_no_apps">No apps found.</string>
     <string name="open_externally">Open externally</string>
     <string name="row_size">Row size</string>
+    <string name="resize">Resize</string>
+    <string name="smaller_rows">Rows −</string>
+    <string name="larger_rows">Rows +</string>
+    <string name="smaller_text">Text −</string>
+    <string name="larger_text">Text +</string>
 </resources>
