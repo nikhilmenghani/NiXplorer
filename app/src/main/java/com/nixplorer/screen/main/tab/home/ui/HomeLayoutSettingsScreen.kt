@@ -284,6 +284,8 @@ fun HomeSectionType.getIcon(): ImageVector {
         HomeSectionType.RECYCLE_BIN -> Icons.Rounded.DeleteSweep
         HomeSectionType.JUMP_TO_PATH -> Icons.Rounded.ArrowOutward
         HomeSectionType.PINNED_FILES -> NiXplorerIcons.Pin
+        HomeSectionType.ANALYZE_STORAGE -> Icons.Rounded.Storage
+        HomeSectionType.RECENTS -> Icons.Rounded.History
     }
 }
 
@@ -296,5 +298,7 @@ fun HomeSectionType.getDescription(): String {
         HomeSectionType.RECYCLE_BIN -> globalClass.getString(R.string.deleted_files)
         HomeSectionType.JUMP_TO_PATH -> globalClass.getString(R.string.quick_path_navigation)
         HomeSectionType.PINNED_FILES -> globalClass.getString(R.string.pinned_files_desc)
+        HomeSectionType.ANALYZE_STORAGE -> globalClass.getString(R.string.analyze_storage)
+        HomeSectionType.RECENTS -> globalClass.getString(R.string.recently_modified_files)
     }
 }

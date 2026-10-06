@@ -27,6 +27,9 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.History
+import androidx.compose.material.icons.rounded.Storage
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.material.icons.rounded.ArrowOutward
 import androidx.compose.material.icons.rounded.Bookmark
 import androidx.compose.material.icons.rounded.Delete
@@ -195,6 +198,17 @@ fun ColumnScope.HomeTabContentView(tab: HomeTab) {
 
                 HomeSectionType.PINNED_FILES -> {
                     PinnedFilesSection(tab = tab, mainActivityManager = mainActivityManager)
+                }
+                HomeSectionType.ANALYZE_STORAGE -> {
+                    val context = LocalContext.current
+                    HomeActionRow(stringResource(R.string.analyze_storage), Icons.Rounded.Storage) {
+                        context.startActivity(android.content.Intent(context, com.nixplorer.screen.storage.StorageAnalyzerActivity::class.java))
+                    }
+                }
+                HomeSectionType.RECENTS -> {
+                    HomeActionRow(stringResource(R.string.recent_files), Icons.Rounded.History) {
+                        mainActivityManager.replaceCurrentTabWith(FilesTab(VirtualFileHolder(RECENT)))
+                    }
                 }
             }
         }
@@ -551,21 +565,22 @@ private fun StorageSection(
             )
             .clip(RoundedCornerShape(12.dp))
     ) {
-        TextButton(
-            onClick = {
-                context.startActivity(android.content.Intent(context, com.nixplorer.screen.storage.StorageAnalyzerActivity::class.java))
-            },
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Text(stringResource(R.string.analyze_storage))
-        }
-        HorizontalDivider(thickness = 0.5.dp)
         storageList.forEachIndexed { index, device ->
             StorageDeviceView(storageDevice = device) {
                 mainActivityManager.replaceCurrentTabWith(FilesTab(device.contentHolder))
             }
             if (index != storageList.lastIndex) HorizontalDivider(thickness = 0.5.dp)
         }
+    }
+}
+
+@Composable
+private fun HomeActionRow(title: String, icon: ImageVector, onClick: () -> Unit) {
+    Column(Modifier.fillMaxWidth().padding(horizontal = 12.dp)
+        .background(MaterialTheme.colorScheme.surfaceContainerLow, RoundedCornerShape(12.dp))
+        .border(0.5.dp, MaterialTheme.colorScheme.surfaceContainerHighest, RoundedCornerShape(12.dp))
+        .clip(RoundedCornerShape(12.dp))) {
+        SimpleNewTabViewItem(title = title, imageVector = icon, onClick = onClick)
     }
 }
 

@@ -12,6 +12,8 @@ object HomeSectionIds {
     const val PINNED_FILES = "pinned_files"
     const val RECYCLE_BIN = "recycle_bin"
     const val JUMP_TO_PATH = "jump_to_path"
+    const val ANALYZE_STORAGE = "analyze_storage"
+    const val RECENTS = "recents"
 }
 
 fun getDefaultHomeLayout(minimalLayout: Boolean = false) = HomeLayout(
@@ -64,6 +66,14 @@ fun getDefaultHomeLayout(minimalLayout: Boolean = false) = HomeLayout(
             title = globalClass.getString(R.string.jump_to_path),
             isEnabled = !minimalLayout,
             order = 6
+        ),
+        HomeSectionConfig(
+            id = HomeSectionIds.ANALYZE_STORAGE, type = HomeSectionType.ANALYZE_STORAGE,
+            title = globalClass.getString(R.string.analyze_storage), isEnabled = true, order = 7
+        ),
+        HomeSectionConfig(
+            id = HomeSectionIds.RECENTS, type = HomeSectionType.RECENTS,
+            title = globalClass.getString(R.string.recent_files), isEnabled = true, order = 8
         )
     )
 )
@@ -74,9 +84,9 @@ data class HomeLayout(
 ) {
     // Adds missing sections for backward compatibility with older saved layouts
     fun getSections(): List<HomeSectionConfig> {
-        // Add Pinned Files if missing (for layouts saved before v1.3.2)
+        val additions = mutableListOf<HomeSectionConfig>()
         if (sections.find { it.id == HomeSectionIds.PINNED_FILES } == null) {
-            return sections.plus(
+            additions.add(
                 HomeSectionConfig(
                     id = HomeSectionIds.PINNED_FILES,
                     type = HomeSectionType.PINNED_FILES,
@@ -86,7 +96,14 @@ data class HomeLayout(
                 )
             )
         }
-        return sections
+        listOf(
+            Triple(HomeSectionIds.ANALYZE_STORAGE, HomeSectionType.ANALYZE_STORAGE, R.string.analyze_storage),
+            Triple(HomeSectionIds.RECENTS, HomeSectionType.RECENTS, R.string.recent_files)
+        ).forEach { (id, type, title) ->
+            if (sections.none { it.id == id }) additions.add(HomeSectionConfig(id, type, globalClass.getString(title), true,
+                (sections.maxOfOrNull { it.order } ?: -1) + additions.size + 1))
+        }
+        return sections + additions
     }
 }
 
@@ -107,5 +124,7 @@ enum class HomeSectionType {
     BOOKMARKS,
     RECYCLE_BIN,
     JUMP_TO_PATH,
-    PINNED_FILES
+    PINNED_FILES,
+    ANALYZE_STORAGE,
+    RECENTS
 }

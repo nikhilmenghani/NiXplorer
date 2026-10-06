@@ -8,6 +8,17 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.ui.unit.dp
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.mutableStateListOf
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import com.nixplorer.screen.main.tab.files.holder.StorageDevice
+import com.nixplorer.screen.main.tab.files.provider.StorageProvider
+import androidx.compose.material3.LinearProgressIndicator
+import com.nixplorer.common.toFormattedSize
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AutoAwesomeMotion
 import androidx.compose.material.icons.rounded.CheckBox
@@ -54,6 +65,20 @@ fun Toolbar(
     onToggleAppInfoDialog: (Boolean) -> Unit,
     hasNewUpdate: Boolean
 ) {
+    var showStorage by remember { mutableStateOf(false) }
+    var loadingStorage by remember { mutableStateOf(false) }
+    val storage = remember { mutableStateListOf<StorageDevice>() }
+    val context = LocalContext.current
+    LaunchedEffect(showStorage) {
+        if (showStorage) {
+            loadingStorage = true
+            try {
+                val devices = withContext(Dispatchers.IO) { StorageProvider.getStorageDevices(context) }
+                storage.clear()
+                storage.addAll(devices)
+            } finally { loadingStorage = false }
+        }
+    }
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -64,18 +89,31 @@ fun Toolbar(
     ) {
         Box {
             IconButton(
-                onClick = { onToggleAppInfoDialog(true) }
+                onClick = { showStorage = true }
             ) {
-                if (hasNewUpdate) {
-                    Icon(
-                        imageVector = NiXplorerIcons.Upgrade,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.error
-                    )
-                } else {
-                    Icon(imageVector = Icons.Rounded.Menu, contentDescription = null)
+                Icon(imageVector = Icons.Rounded.Menu, contentDescription = stringResource(R.string.storage))
+            }
+            DropdownMenu(expanded = showStorage, onDismissRequest = { showStorage = false },
+                modifier = Modifier.widthIn(min = 280.dp, max = 360.dp),
+                containerColor = MaterialTheme.colorScheme.surfaceContainerHigh) {
+                Text(stringResource(R.string.storage), Modifier.padding(horizontal = 20.dp, vertical = 12.dp), style = MaterialTheme.typography.titleMedium)
+                if (loadingStorage) LinearProgressIndicator(Modifier.fillMaxWidth())
+                storage.forEach { device ->
+                    StorageDeviceView(device) {
+                        showStorage = false
+                        globalClass.mainActivityManager.replaceCurrentTabWith(FilesTab(device.contentHolder))
+                    }
+                    Text(stringResource(R.string.analysis_free_of_total,
+                        (device.totalSize - device.usedSize).coerceAtLeast(0).toFormattedSize(), device.totalSize.toFormattedSize()),
+                        Modifier.padding(start = 60.dp, end = 16.dp, bottom = 12.dp), style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
-
+                HorizontalDivider()
+                DropdownMenuItem(text = { Text(stringResource(R.string.analyze_storage)) },
+                    onClick = {
+                        showStorage = false
+                        context.startActivity(Intent(context, com.nixplorer.screen.storage.StorageAnalyzerActivity::class.java))
+                    }, leadingIcon = { Icon(Icons.Rounded.ViewComfy, null) })
             }
         }
 
@@ -126,7 +164,7 @@ fun MoreOptionsButton() {
         ) {
             val state by mainActivityManager.state.collectAsState()
 
-            if (state.hasNewUpdate && globalClass.preferencesManager.hideToolbar) {
+            if (state.hasNewUpdate) {
                 DropdownMenuItem(
                     text = {
                         Text(text = stringResource(R.string.new_update_available))
@@ -236,7 +274,7 @@ fun MoreOptionsButton() {
                 }
             )
 
-            if (globalClass.preferencesManager.hideToolbar) {
+            run {
                 DropdownMenuItem(
                     text = { Text(text = stringResource(R.string.about)) },
                     onClick = {
