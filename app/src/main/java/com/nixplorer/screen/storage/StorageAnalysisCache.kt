@@ -33,7 +33,7 @@ internal object StorageAnalysisCache {
             val cached = memory[root.absolutePath] ?: runCatching {
                 ObjectInputStream(cacheFile.inputStream().buffered()).use { it.readObject() as CachedStorage }
             }.getOrNull()
-            if (cached != null && cached.schema == 1 && cached.root == root.absolutePath) {
+            if (cached != null && cached.schema == 2 && cached.root == root.absolutePath) {
                 memory[root.absolutePath] = cached
                 onCached(cached.report)
                 var valid = true
@@ -47,7 +47,7 @@ internal object StorageAnalysisCache {
             val stamps = mutableListOf<StorageStamp>()
             val report = analyzeFiles(root, onSnapshot = { stamps.add(StorageStamp.capture(it)) }, onProgress = onProgress)
             currentCoroutineContext().ensureActive()
-            val snapshot = CachedStorage(1, root.absolutePath, report, stamps)
+            val snapshot = CachedStorage(2, root.absolutePath, report, stamps)
             memory[root.absolutePath] = snapshot
             // An interrupted scan never replaces the previous complete report.
             runCatching {

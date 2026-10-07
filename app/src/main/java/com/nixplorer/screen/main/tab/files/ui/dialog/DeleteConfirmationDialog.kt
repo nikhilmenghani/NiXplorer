@@ -31,6 +31,7 @@ import kotlinx.coroutines.launch
 fun DeleteConfirmationDialog(
     show: Boolean,
     tab: FilesTab,
+    onConfirmed: () -> Unit = {},
     onDismissRequest: () -> Unit
 ) {
     if (show) {
@@ -58,6 +59,7 @@ fun DeleteConfirmationDialog(
                 TextButton(
                     onClick = {
                         onDismissRequest()
+                        onConfirmed()
                         tab.unselectAllFiles()
                         if (showRememberChoice && rememberChoice) {
                             preferencesManager.moveToRecycleBin =

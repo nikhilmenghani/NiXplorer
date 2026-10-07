@@ -9,13 +9,17 @@ import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 
 internal data class StorageEntry(val file: File, val bytes: Long, val complete: Boolean = true) : java.io.Serializable
-internal data class FileStorageReport(val files: List<StorageEntry>, val folders: List<StorageEntry>, val bytes: Long, val fileCount: Long, val skippedFolders: Int) : java.io.Serializable
+internal data class FileStorageReport(val files: List<StorageEntry>, val folders: List<StorageEntry>, val bytes: Long, val fileCount: Long, val skippedFolders: Int,
+    val categories: List<CategoryStorage> = emptyList()) : java.io.Serializable
 private data class FolderFrame(val file: File, val children: Array<File>, var index: Int = 0, var bytes: Long = 0, var complete: Boolean = true)
 
 internal suspend fun analyzeFiles(root: File, limit: Int = 100, onSnapshot: (File) -> Unit = {}, onProgress: (Long) -> Unit = {}): FileStorageReport = withContext(Dispatchers.IO) {
     require(limit > 0)
     val files = PriorityQueue<StorageEntry>(compareBy { it.bytes })
     val folders = PriorityQueue<StorageEntry>(compareBy { it.bytes })
+    val categoryFiles = StorageCategory.entries.associateWith { PriorityQueue<StorageEntry>(compareBy { it.bytes }) }
+    val categoryBytes = LongArray(StorageCategory.entries.size)
+    val categoryCounts = LongArray(StorageCategory.entries.size)
     fun keep(queue: PriorityQueue<StorageEntry>, entry: StorageEntry) {
         if (entry.bytes == 0L) return
         queue.add(entry)
@@ -46,6 +50,10 @@ internal suspend fun analyzeFiles(root: File, limit: Int = 100, onSnapshot: (Fil
                 parent.bytes += bytes
                 count++
                 keep(files, StorageEntry(child, bytes))
+                val category = storageCategory(child)
+                categoryBytes[category.ordinal] += bytes
+                categoryCounts[category.ordinal]++
+                keep(categoryFiles.getValue(category), StorageEntry(child, bytes))
                 val now = System.currentTimeMillis()
                 if (now - lastUpdate > 200) { onProgress(count); lastUpdate = now }
             } else parent.complete = false
@@ -59,5 +67,6 @@ internal suspend fun analyzeFiles(root: File, limit: Int = 100, onSnapshot: (Fil
             }
         }
     }
-    FileStorageReport(files.sortedByDescending { it.bytes }, folders.sortedByDescending { it.bytes }, total, count, skipped)
+    FileStorageReport(files.sortedByDescending { it.bytes }, folders.sortedByDescending { it.bytes }, total, count, skipped,
+        StorageCategory.entries.map { CategoryStorage(it, categoryBytes[it.ordinal], categoryCounts[it.ordinal], categoryFiles.getValue(it).sortedByDescending { entry -> entry.bytes }) })
 }

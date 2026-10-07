@@ -524,4 +524,35 @@
         <item quantity="one">%1$d file</item>
         <item quantity="other">%1$d files</item>
     </plurals>
+    <string name="experimental_storage">Experimental storage analyzer</string>
+    <string name="storage_large_videos">Large video files</string>
+    <string name="storage_large_images">Large images</string>
+    <string name="storage_large_documents">Large documents</string>
+    <string name="storage_large_apks">Large APK files</string>
+    <string name="storage_large_audio">Large audio files</string>
+    <string name="storage_large_archives">Large archives</string>
+    <string name="storage_large_other">Other files</string>
+    <string name="storage_available">%1$s available</string>
+    <string name="storage_device_total">of %1$s on this device</string>
+    <string name="storage_scanned_files">in scanned files</string>
+    <string name="storage_manage_categories">Manage storage</string>
+    <string name="storage_category_totals_hint">Totals include every accessible file in each category. Open to review the largest files.</string>
+    <string name="storage_category_summary">%1$s · %2$d files</string>
+    <string name="storage_category_largest">Largest files in this category</string>
+    <string name="storage_ranked_count">%1$d items · Largest first · Up to 100 per category</string>
+    <string name="empty_folders">Clean up empty folders</string>
+    <string name="empty_folders_explanation">Review folders whose entire subtree contains no files. Empty chains are grouped under their highest folder. Hidden and zero-byte files are kept. Nothing is selected by default.</string>
+    <string name="empty_folders_scanning">Checking… %1$d folders</string>
+    <string name="empty_folders_found">%1$d empty folder groups</string>
+    <string name="empty_folders_total">%1$d empty folders in total</string>
+    <string name="empty_folders_includes">Includes %1$d empty folders · No files</string>
+    <string name="empty_folders_skipped">%1$d unreadable folders skipped. They and their ancestors are kept.</string>
+    <string name="empty_folders_none">No empty folder trees found.</string>
+    <string name="empty_folders_select_none">Select none</string>
+    <string name="empty_folders_delete_selected">Delete selected (%1$d)</string>
+    <string name="empty_folders_confirm_title">Delete empty folders?</string>
+    <string name="empty_folders_confirm_message">Delete %1$d selected groups containing %2$d empty folders? These folders are removed permanently. Each tree is rechecked first; changed, unreadable, or non-empty trees are skipped. No files will be deleted.</string>
+    <string name="empty_folders_cleaning">Processed %1$d folder groups…</string>
+    <string name="empty_folders_result">Removed %1$d empty folders. %2$d groups were kept because they changed or could not be removed.</string>
+    <string name="empty_folders_failed">Unable to complete empty-folder cleanup. Refresh to check the current folders.</string>
 </resources>

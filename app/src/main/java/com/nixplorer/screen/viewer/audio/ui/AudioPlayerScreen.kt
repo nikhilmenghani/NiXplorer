@@ -87,6 +87,7 @@ import androidx.core.graphics.ColorUtils
 import androidx.media3.common.Player
 import androidx.palette.graphics.Palette
 import com.nixplorer.R
+import com.nixplorer.screen.viewer.MediaDeleteButton
 import com.nixplorer.common.toFormattedTime
 import com.nixplorer.common.ui.Space
 import com.nixplorer.screen.viewer.audio.AudioPlayerInstance
@@ -154,6 +155,7 @@ fun MusicPlayerScreen(
                     onEqualizerClick = { audioPlayerInstance.toggleEqualizer() },
                     onVolumeClick = { audioPlayerInstance.toggleVolume() },
                     onCloseClick = onClosed,
+                    deleteButton = { MediaDeleteButton(audioPlayerInstance.uri) },
                     onOpenExternally = {
                         if (openExternally(context, audioPlayerInstance.uri, "audio/*")) onClosed()
                     },
@@ -242,6 +244,7 @@ fun TopControls(
     onEqualizerClick: () -> Unit,
     onVolumeClick: () -> Unit,
     onCloseClick: () -> Unit,
+    deleteButton: @Composable () -> Unit,
     onOpenExternally: () -> Unit,
     audioPlayerColorScheme: AudioPlayerColorScheme,
 ) {
@@ -261,6 +264,7 @@ fun TopControls(
         Spacer(Modifier.weight(1f))
 
         Row {
+            deleteButton()
             IconButton(onClick = onOpenExternally) {
                 Icon(Icons.AutoMirrored.Filled.OpenInNew, stringResource(R.string.open_externally), tint = audioPlayerColorScheme.tintColor)
             }

@@ -100,6 +100,7 @@ import com.nixplorer.common.read
 import com.nixplorer.common.showMsg
 import com.nixplorer.screen.viewer.ViewerActivity
 import com.nixplorer.screen.viewer.ViewerInstance
+import com.nixplorer.screen.viewer.MediaDeleteButton
 import com.nixplorer.screen.viewer.image.misc.ImageInfo
 import com.nixplorer.screen.viewer.image.misc.ImageInfo.Companion.extractImageInfo
 import me.saket.telephoto.zoomable.coil3.ZoomableAsyncImage
@@ -333,6 +334,7 @@ private fun ImageViewerPage(uri: Uri) {
                             }
                         },
                         actions = {
+                            MediaDeleteButton(uri)
                             IconButton(onClick = { openExternally(context, uri, "image/*") }) {
                                 Icon(Icons.AutoMirrored.Filled.OpenInNew, stringResource(R.string.open_externally))
                             }

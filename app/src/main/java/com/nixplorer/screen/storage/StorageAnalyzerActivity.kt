@@ -139,6 +139,9 @@ private fun StorageAnalyzerScreen(onBack: () -> Unit) {
                     title = { Text(stringResource(R.string.analysis_title), style = MaterialTheme.typography.titleLarge) },
                     navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, stringResource(R.string.back)) } },
                     actions = {
+                        IconButton(onClick = { context.startActivity(Intent(context, ExperimentalStorageActivity::class.java)) }) {
+                            Icon(Icons.Rounded.Science, stringResource(R.string.experimental_storage))
+                        }
                         IconButton(onClick = { showNotes = !showNotes }) { Icon(Icons.Rounded.Info, stringResource(R.string.analysis_about)) }
                         IconButton(onClick = { invalidateAppStorage(); usageAccess = context.hasStorageUsageAccess(); forceScan = true; scanRequested = true; refresh++; appRefresh++ }) {
                             Icon(Icons.Rounded.Refresh, stringResource(R.string.refresh_analysis))

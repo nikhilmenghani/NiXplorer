@@ -24,6 +24,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.ui.res.stringResource
 import com.nixplorer.R
+import com.nixplorer.screen.viewer.MediaDeleteButton
 import com.nixplorer.common.openExternally
 import androidx.compose.material.icons.automirrored.filled.VolumeOff
 import androidx.compose.material.icons.automirrored.filled.VolumeUp
@@ -172,6 +173,7 @@ fun VideoPlayerScreen(
                     },
                     onBackPressed = onBackPressed,
                     onToggleMute = { videoPlayerInstance.toggleMute() },
+                    deleteButton = { MediaDeleteButton(videoUri) },
                     onOpenExternally = {
                         if (openExternally(context, videoUri, "video/*")) {
                             videoPlayerInstance.getPlayer()?.pause()
@@ -207,7 +209,8 @@ fun VideoControls(
     onSeekBackward: () -> Unit,
     onSeek: (Long) -> Unit,
     onBackPressed: () -> Unit,
-    onOpenExternally: () -> Unit
+    onOpenExternally: () -> Unit,
+    deleteButton: @Composable () -> Unit
 ) {
     val defaultColor = colorScheme.surface
 
@@ -232,6 +235,7 @@ fun VideoControls(
             onBackPressed = onBackPressed,
             onToggleMute = onToggleMute,
             onOpenExternally = onOpenExternally,
+            deleteButton = deleteButton,
             modifier = Modifier.align(Alignment.TopStart)
         )
 
@@ -259,6 +263,7 @@ fun TopBar(
     playerState: VideoPlayerState,
     onBackPressed: () -> Unit,
     onToggleMute: () -> Unit,
+    deleteButton: @Composable () -> Unit,
     onOpenExternally: () -> Unit,
     modifier: Modifier,
 ) {
@@ -303,6 +308,7 @@ fun TopBar(
         IconButton(onClick = onOpenExternally) {
             Icon(Icons.AutoMirrored.Filled.OpenInNew, stringResource(R.string.open_externally), tint = colorScheme.onSurface)
         }
+        deleteButton()
     }
 }
 

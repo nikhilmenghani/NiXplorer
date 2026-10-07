@@ -40,6 +40,8 @@
         tools:targetApi="34" >
 
         <activity android:name=".screen.storage.StorageAnalyzerActivity" android:exported="false" />
+        <activity android:name=".screen.storage.ExperimentalStorageActivity" android:exported="false" />
+        <activity android:name=".screen.storage.EmptyFoldersActivity" android:exported="false" />
 
         <activity
             android:name=".screen.textEditor.TextEditorActivity"

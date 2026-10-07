@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.height
 import androidx.compose.material.icons.rounded.FolderOpen
+import androidx.compose.material.icons.rounded.FolderDelete
 import androidx.compose.material.icons.rounded.SdStorage
 import com.nixplorer.screen.main.tab.files.misc.StorageDeviceType.INTERNAL_STORAGE
 import androidx.compose.foundation.layout.widthIn
@@ -130,6 +131,16 @@ fun Toolbar(
                         showStorage = false
                         context.startActivity(Intent(context, com.nixplorer.screen.storage.StorageAnalyzerActivity::class.java))
                     }, leadingIcon = { Icon(Icons.Rounded.ViewComfy, null, Modifier.size(20.dp)) })
+                DropdownMenuItem(text = { Text(stringResource(R.string.experimental_storage), style = MaterialTheme.typography.bodyMedium) },
+                    onClick = {
+                        showStorage = false
+                        context.startActivity(Intent(context, com.nixplorer.screen.storage.ExperimentalStorageActivity::class.java))
+                    }, leadingIcon = { Icon(Icons.Rounded.ViewComfy, null, Modifier.size(20.dp)) })
+                DropdownMenuItem(text = { Text(stringResource(R.string.empty_folders), style = MaterialTheme.typography.bodyMedium) },
+                    onClick = {
+                        showStorage = false
+                        context.startActivity(Intent(context, com.nixplorer.screen.storage.EmptyFoldersActivity::class.java))
+                    }, leadingIcon = { Icon(Icons.Rounded.FolderDelete, null, Modifier.size(20.dp)) })
             }
         }
 
