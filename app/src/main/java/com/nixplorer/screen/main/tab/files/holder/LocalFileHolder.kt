@@ -32,6 +32,10 @@ import com.nixplorer.screen.viewer.image.ImageViewerActivity
 import com.nixplorer.screen.viewer.pdf.PdfViewerActivity
 import com.nixplorer.screen.viewer.video.VideoPlayerActivity
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import androidx.lifecycle.lifecycleScope
 import java.io.File
 
 class LocalFileHolder(val file: File) : ContentHolder() {
@@ -295,7 +299,15 @@ class LocalFileHolder(val file: File) : ContentHolder() {
 
         if (FileMimeType.supportedArchiveFileType.contains(extension)) {
             if (isApk() && skipSupportedExtensions) return false
-            globalClass.zipManager.openArchive(this)
+            val scope = (context as? androidx.lifecycle.LifecycleOwner)?.lifecycleScope ?: globalClass.mainActivityManager.managerScope
+            scope.launch(Dispatchers.Main) {
+                val encrypted = withContext(Dispatchers.IO) {
+                    runCatching { net.lingala.zip4j.ZipFile(file).use { it.isEncrypted } }.getOrDefault(false)
+                }
+                if (encrypted) context.startActivity(Intent(context, com.nixplorer.screen.archive.ArchiveOpenActivity::class.java)
+                    .setDataAndType(createUri(), mimeType).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION))
+                else globalClass.zipManager.openArchive(this@LocalFileHolder)
+            }
             return true
         }
 

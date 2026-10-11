@@ -8,6 +8,134 @@ import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import me.zhanghai.android.libarchive.Archive
 import me.zhanghai.android.libarchive.ArchiveEntry
+import net.lingala.zip4j.ZipFile
+
+internal class ArchivePasswordRequired : Exception()
+
+internal fun isRar(source: File): Boolean = source.inputStream().use {
+    val signature = ByteArray(6)
+    it.read(signature) == 6 && signature.contentEquals(byteArrayOf(0x52, 0x61, 0x72, 0x21, 0x1a, 0x07))
+}
+
+internal suspend fun unlockRar(source: File, password: CharArray?): File {
+    val output = File(source.parentFile, source.name + ".zip")
+    val job = currentCoroutineContext()[kotlinx.coroutines.Job]
+    val options = com.github.junrar.ArchiveOptions.builder().maxDictionarySize(128L * 1024 * 1024)
+        .apply { if (password != null) password(password) }.build()
+    try {
+        com.github.junrar.Archive(source, options).use { archive ->
+            if (archive.isPasswordProtected && password == null) throw ArchivePasswordRequired()
+            ZipOutputStream(output.outputStream().buffered()).use { zip ->
+                zip.setLevel(0)
+                val seen = hashSetOf<String>()
+                archive.fileHeaders.forEach { header ->
+                    currentCoroutineContext().ensureActive()
+                    val path = safeArchivePath(header.fileName)
+                    if (path.isNotEmpty()) {
+                        val name = path + if (header.isDirectory) "/" else ""
+                        require(seen.add(name)) { "Duplicate archive path" }
+                        zip.putNextEntry(ZipEntry(name))
+                        if (!header.isDirectory) archive.extractFile(header, object : java.io.OutputStream() {
+                            override fun write(value: Int) { write(byteArrayOf(value.toByte()), 0, 1) }
+                            override fun write(bytes: ByteArray, offset: Int, count: Int) {
+                                job?.ensureActive()
+                                check(output.parentFile!!.usableSpace > 64L * 1024 * 1024) { "Not enough temporary storage" }
+                                zip.write(bytes, offset, count)
+                            }
+                        })
+                        zip.closeEntry()
+                    }
+                }
+            }
+        }
+        return output
+    } catch (e: Exception) {
+        output.delete()
+        val reason = e.javaClass.simpleName
+        if (reason.contains("Password", true) || reason.contains("InitDecipherer", true) ||
+            (password != null && reason.contains("Crc", true))) throw ArchivePasswordRequired()
+        throw e
+    }
+}
+
+internal fun isSevenZip(source: File): Boolean = source.inputStream().use {
+    val signature = ByteArray(6)
+    it.read(signature) == 6 && signature.contentEquals(byteArrayOf(0x37, 0x7a, 0xbc.toByte(), 0xaf.toByte(), 0x27, 0x1c))
+}
+
+internal suspend fun unlockSevenZip(source: File, password: CharArray?): File {
+    val output = File(source.parentFile, source.name + ".zip")
+    try {
+        org.apache.commons.compress.archivers.sevenz.SevenZFile(source, password).use { archive ->
+            ZipOutputStream(output.outputStream().buffered()).use { zip ->
+                zip.setLevel(0)
+                val seen = hashSetOf<String>()
+                val bytes = ByteArray(64 * 1024)
+                while (true) {
+                    currentCoroutineContext().ensureActive()
+                    val entry = archive.nextEntry ?: break
+                    val path = safeArchivePath(entry.name ?: "file")
+                    if (path.isEmpty()) continue
+                    val name = path + if (entry.isDirectory) "/" else ""
+                    require(seen.add(name)) { "Duplicate archive path" }
+                    zip.putNextEntry(ZipEntry(name))
+                    if (!entry.isDirectory) while (true) {
+                        currentCoroutineContext().ensureActive()
+                        val count = archive.read(bytes)
+                        if (count < 0) break
+                        check(output.parentFile!!.usableSpace > 64L * 1024 * 1024) { "Not enough temporary storage" }
+                        zip.write(bytes, 0, count)
+                    }
+                    zip.closeEntry()
+                }
+            }
+        }
+        return output
+    } catch (e: Exception) {
+        output.delete()
+        if (e is org.apache.commons.compress.PasswordRequiredException ||
+            (password != null && e is java.io.IOException &&
+                !e.message.orEmpty().contains("unsupported", true) &&
+                !e.javaClass.simpleName.contains("MemoryLimit", true))) throw ArchivePasswordRequired()
+        throw e
+    }
+}
+
+internal suspend fun unlockZip(source: File, password: CharArray?): File {
+    val input = ZipFile(source)
+    if (!input.isEncrypted) return source
+    if (password == null) throw ArchivePasswordRequired()
+    input.setPassword(password)
+    val output = File(source.parentFile, source.name + ".unlocked.zip")
+    try {
+        input.use { archive -> ZipOutputStream(output.outputStream().buffered()).use { zip ->
+            zip.setLevel(0)
+            archive.fileHeaders.forEach { header ->
+                currentCoroutineContext().ensureActive()
+                val path = safeArchivePath(header.fileName)
+                if (path.isNotEmpty()) {
+                    zip.putNextEntry(ZipEntry(path + if (header.isDirectory) "/" else ""))
+                    if (!header.isDirectory) archive.getInputStream(header).use { stream ->
+                        val bytes = ByteArray(64 * 1024)
+                        while (true) {
+                            currentCoroutineContext().ensureActive()
+                            val count = stream.read(bytes)
+                            if (count < 0) break
+                            check(output.parentFile!!.usableSpace > 64L * 1024 * 1024) { "Not enough temporary storage" }
+                            zip.write(bytes, 0, count)
+                        }
+                    }
+                    zip.closeEntry()
+                }
+            }
+        } }
+        return output
+    } catch (e: Exception) {
+        output.delete()
+        if (e is net.lingala.zip4j.exception.ZipException) throw ArchivePasswordRequired()
+        throw e
+    }
+}
 
 internal fun safeArchivePath(path: String): String {
     val normalized = path.replace('\\', '/')
@@ -18,14 +146,18 @@ internal fun safeArchivePath(path: String): String {
 }
 
 /** Normalize read-only formats into a disposable ZIP for the existing browsing/extraction pipeline. */
-internal suspend fun convertArchiveToZip(source: File): File {
+internal suspend fun convertArchiveToZip(source: File, password: CharArray? = null): File {
     val output = File(source.parentFile, source.name + ".zip")
     val reader = Archive.readNew()
+    var requestedPassword = false
+    var encrypted = false
     try {
         Archive.readSupportFilterAll(reader)
         Archive.readSupportFormatAll(reader)
         // A raw compressed stream (e.g. .gz) is exposed as one decompressed file.
         Archive.readSupportFormatRaw(reader)
+        if (password != null) Archive.readAddPassphrase(reader, String(password).toByteArray(Charsets.UTF_8))
+        Archive.readSetPassphraseCallback<Unit>(reader, Unit) { _, _ -> requestedPassword = true; null }
         Archive.readOpenFileName(reader, source.absolutePath.toByteArray(Charsets.UTF_8), 64 * 1024L)
         val seen = hashSetOf<String>()
         val buffer = ByteBuffer.allocateDirect(64 * 1024)
@@ -39,7 +171,8 @@ internal suspend fun convertArchiveToZip(source: File): File {
                 val entry = Archive.readNextHeader(reader)
                 if (entry == 0L) break
                 require(Archive.format(reader) != Archive.FORMAT_RAW || Archive.filterCode(reader, 0) != Archive.FILTER_NONE) { "Not a supported archive" }
-                require(!ArchiveEntry.isEncrypted(entry)) { "Encrypted archives require a password" }
+                encrypted = encrypted || ArchiveEntry.isEncrypted(entry)
+                if (encrypted && password == null) throw ArchivePasswordRequired()
                 val directory = ArchiveEntry.filetype(entry) == ArchiveEntry.AE_IFDIR
                 // Never reproduce symbolic links, hard links or special filesystem entries.
                 require(directory || (ArchiveEntry.filetype(entry) == ArchiveEntry.AE_IFREG && !ArchiveEntry.hardlinkIsSet(entry))) { "Archive contains unsupported links or special entries" }
@@ -70,6 +203,9 @@ internal suspend fun convertArchiveToZip(source: File): File {
         return output
     } catch (e: Exception) {
         output.delete()
+        if (e is me.zhanghai.android.libarchive.ArchiveException &&
+            (requestedPassword || encrypted) && !e.message.orEmpty().contains("unsupported", true) &&
+            !e.message.orEmpty().contains("not supported", true)) throw ArchivePasswordRequired()
         throw e
     } finally { Archive.readFree(reader) }
 }

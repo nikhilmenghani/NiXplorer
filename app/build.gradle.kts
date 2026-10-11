@@ -172,4 +172,7 @@ dependencies {
     implementation(libs.storage)
     implementation(libs.zip4j)
     implementation("me.zhanghai.android.libarchive:library:1.1.6")
+    implementation("org.apache.commons:commons-compress:1.28.0")
+    implementation("org.tukaani:xz:1.10")
+    implementation("com.github.junrar:junrar:8.1.2")
 }

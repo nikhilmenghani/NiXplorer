@@ -10,6 +10,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.nixplorer.App.Companion.globalClass
@@ -41,9 +42,27 @@ class ArchiveOpenActivity : BaseActivity() {
         setContent {
             FileExplorerTheme {
                 var failed by remember(source) { mutableStateOf(false) }
+                var prepared by remember(source) { mutableStateOf<File?>(null) }
+                var passwordPrompt by remember(source) { mutableStateOf(false) }
+                var passwordText by remember(source) { mutableStateOf("") }
+                var passwordError by remember(source) { mutableStateOf(false) }
+                var credential by remember(source) { mutableStateOf<CharArray?>(null) }
+                var attempt by remember(source) { mutableIntStateOf(0) }
+                var opened by remember(source) { mutableStateOf(false) }
+                DisposableEffect(source) {
+                    onDispose {
+                        credential?.fill('\u0000')
+                        if (!opened) prepared?.let { file ->
+                            file.delete()
+                            File(file.parentFile, file.name + ".zip").delete()
+                            File(file.parentFile, file.name + ".unlocked.zip").delete()
+                            file.parentFile?.delete()
+                        }
+                    }
+                }
                 LaunchedEffect(source) {
                     try {
-                        val archive = withContext(Dispatchers.IO) {
+                        prepared = withContext(Dispatchers.IO) {
                             var name: String? = null
                             if (source.scheme == "content") {
                                 contentResolver.query(source, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use {
@@ -67,20 +86,56 @@ class ArchiveOpenActivity : BaseActivity() {
                                         to.write(buffer, 0, count)
                                     }
                                 } }
-                                if (runCatching { ZipFile(target).use { } }.isSuccess) target
-                                else convertArchiveToZip(target).also { target.delete() }
+                                target
                             } catch (e: Exception) {
                                 target.delete()
                                 directory.delete()
                                 throw e
                             }
                         }
+                    } catch (e: CancellationException) { throw e }
+                    catch (e: Exception) { globalClass.logger.logError(e); failed = true }
+                }
+                LaunchedEffect(prepared, attempt) {
+                    val file = prepared ?: return@LaunchedEffect
+                    val password = credential
+                    try {
+                        val archive = withContext(Dispatchers.IO) {
+                            if (runCatching { ZipFile(file).use { } }.isSuccess) unlockZip(file, password)
+                            else if (isSevenZip(file)) unlockSevenZip(file, password)
+                            else if (isRar(file)) unlockRar(file, password)
+                            else convertArchiveToZip(file, password)
+                        }
                         globalClass.zipManager.openArchive(LocalFileHolder(archive), inNewTab = true)
+                        opened = true
                         startActivity(Intent(this@ArchiveOpenActivity, MainActivity::class.java)
                             .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP))
                         finish()
                     } catch (e: CancellationException) { throw e }
-                    catch (e: Exception) { globalClass.logger.logError(e); failed = true }
+                    catch (_: ArchivePasswordRequired) {
+                        passwordError = password != null
+                        passwordPrompt = true
+                    } catch (e: Exception) { globalClass.logger.logError(e); failed = true }
+                    finally { password?.fill('\u0000'); credential = null }
+                }
+                fun submitPassword() {
+                    if (passwordText.isEmpty()) return
+                    credential = passwordText.toCharArray()
+                    passwordText = ""
+                    passwordPrompt = false
+                    attempt++
+                }
+                if (passwordPrompt) com.nixplorer.common.ui.TextEntryTopSheet(stringResource(R.string.archive_password_title), { finish() }) { focus ->
+                    Text(prepared?.name.orEmpty(), style = MaterialTheme.typography.bodyMedium)
+                    OutlinedTextField(value = passwordText, onValueChange = { passwordText = it; passwordError = false },
+                        modifier = Modifier.fillMaxWidth().focusRequester(focus), singleLine = true,
+                        label = { Text(stringResource(R.string.archive_password)) },
+                        visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation(),
+                        isError = passwordError,
+                        supportingText = if (passwordError) ({ Text(stringResource(R.string.archive_password_incorrect)) }) else null,
+                        keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(imeAction = androidx.compose.ui.text.input.ImeAction.Done),
+                        keyboardActions = androidx.compose.foundation.text.KeyboardActions(onDone = { submitPassword() }))
+                    com.nixplorer.common.ui.SheetActionButton(onClick = ::submitPassword, enabled = passwordText.isNotEmpty()) { Text(stringResource(R.string.open)) }
                 }
                 Surface(Modifier.fillMaxSize()) {
                     Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().padding(24.dp),
