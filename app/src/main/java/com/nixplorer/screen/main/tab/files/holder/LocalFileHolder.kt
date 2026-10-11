@@ -65,7 +65,11 @@ class LocalFileHolder(val file: File) : ContentHolder() {
     override val canWrite: Boolean by lazy { file.canWrite() }
 
     private val isTsVideo by lazy { extension == "ts" && file.isTransportStream() }
-    val mimeType by lazy { if (isTsVideo) "video/mp2t" else file.mimeType ?: anyFileType }
+    val mimeType by lazy { when {
+        isTsVideo -> "video/mp2t"
+        extension == "config" -> "text/plain"
+        else -> file.mimeType ?: anyFileType
+    } }
 
     val basePath by lazy { file.getBasePath(globalClass) }
 
@@ -296,6 +300,16 @@ class LocalFileHolder(val file: File) : ContentHolder() {
         }
 
         if (skipSupportedExtensions) return false
+
+        if (extension in FileMimeType.archiveFileType) {
+            context.startActivity(Intent(context, com.nixplorer.screen.archive.ArchiveOpenActivity::class.java)
+                .setDataAndType(createUri(), mimeType).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION))
+            return true
+        }
+        if (extension == "config") {
+            openFileWithPackage(context, context.packageName, com.nixplorer.screen.viewer.text.TextViewerActivity::class.java.name)
+            return true
+        }
 
         if (!isTsVideo && (codeFileType.contains(extension) || editableFileType.contains(extension))) {
             globalClass.textEditorManager.openTextEditor(

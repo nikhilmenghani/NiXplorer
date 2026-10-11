@@ -41,12 +41,16 @@ class ZipManager {
         return foundChanges
     }
 
-    fun openArchive(archive: LocalFileHolder) {
+    fun openArchive(archive: LocalFileHolder, inNewTab: Boolean = false) {
         val existingTreeKey = archiveList.keys.find { archive.uniquePath == it.uniquePath }
 
         if (existingTreeKey != null) {
             archiveList[existingTreeKey]?.let { existingTree ->
                 if (existingTree.timeStamp == archive.lastModified) {
+                    if (inNewTab) {
+                        globalClass.mainActivityManager.addTabAndSelect(FilesTab(existingTree.createRootContentHolder()))
+                        return
+                    }
                     globalClass.mainActivityManager.let { mainManager ->
                         val tab = mainManager.getActiveTab()
                         if (tab is FilesTab) {
@@ -74,6 +78,10 @@ class ZipManager {
         }
 
         archiveList[archive] = ZipTree(archive).apply {
+            if (inNewTab) {
+                globalClass.mainActivityManager.addTabAndSelect(FilesTab(createRootContentHolder()))
+                return@apply
+            }
             globalClass.mainActivityManager.let { mainManager ->
                 val tab = mainManager.getActiveTab()
                 if (tab is FilesTab) {

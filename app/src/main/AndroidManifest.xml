@@ -42,6 +42,82 @@
         <activity android:name=".screen.storage.StorageAnalyzerActivity" android:exported="false" />
         <activity android:name=".screen.storage.ExperimentalStorageActivity" android:exported="false" />
         <activity android:name=".screen.storage.EmptyFoldersActivity" android:exported="false" />
+        <activity android:name=".screen.archive.ArchiveOpenActivity" android:exported="true" android:label="${appLabel}">
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="content" />
+                <data android:scheme="file" />
+                <data android:mimeType="application/zip" />
+                <data android:mimeType="application/x-zip" />
+                <data android:mimeType="application/x-zip-compressed" />
+                <data android:mimeType="application/x-compressed" />
+                <data android:mimeType="application/java-archive" />
+                <data android:mimeType="application/x-java-archive" />
+                <data android:mimeType="application/vnd.android.package-archive" />
+                <data android:mimeType="application/vnd.rar" />
+                <data android:mimeType="application/x-rar-compressed" />
+                <data android:mimeType="application/x-rar" />
+                <data android:mimeType="application/x-7z-compressed" />
+                <data android:mimeType="application/x-tar" />
+                <data android:mimeType="application/gzip" />
+                <data android:mimeType="application/x-gzip" />
+                <data android:mimeType="application/x-bzip2" />
+                <data android:mimeType="application/x-bzip2-compressed-tar" />
+                <data android:mimeType="application/x-xz" />
+                <data android:mimeType="application/x-lzma" />
+                <data android:mimeType="application/x-lzip" />
+                <data android:mimeType="application/zstd" />
+                <data android:mimeType="application/x-lz4" />
+                <data android:mimeType="application/x-iso9660-image" />
+                <data android:mimeType="application/vnd.ms-cab-compressed" />
+                <data android:mimeType="application/x-cpio" />
+                <data android:mimeType="application/x-archive" />
+                <data android:mimeType="application/x-debian-package" />
+                <data android:mimeType="application/x-rpm" />
+                <data android:mimeType="application/x-lha" />
+                <data android:mimeType="application/x-xar" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="content" />
+                <data android:scheme="file" />
+                <data android:host="*" />
+                <data android:mimeType="application/octet-stream" />
+                <data android:pathPattern=".*\\.zip" />
+                <data android:pathPattern=".*\\.ZIP" />
+                <data android:pathPattern=".*\\.jar" />
+                <data android:pathPattern=".*\\.apks" />
+                <data android:pathPattern=".*\\.rar" />
+                <data android:pathPattern=".*\\.7z" />
+                <data android:pathPattern=".*\\.tar" />
+                <data android:pathPattern=".*\\.gz" />
+                <data android:pathPattern=".*\\.tgz" />
+                <data android:pathPattern=".*\\.bz2" />
+                <data android:pathPattern=".*\\.tbz" />
+                <data android:pathPattern=".*\\.tbz2" />
+                <data android:pathPattern=".*\\.xz" />
+                <data android:pathPattern=".*\\.txz" />
+                <data android:pathPattern=".*\\.lz" />
+                <data android:pathPattern=".*\\.lzma" />
+                <data android:pathPattern=".*\\.lz4" />
+                <data android:pathPattern=".*\\.zst" />
+                <data android:pathPattern=".*\\.iso" />
+                <data android:pathPattern=".*\\.cab" />
+                <data android:pathPattern=".*\\.cpio" />
+                <data android:pathPattern=".*\\.ar" />
+                <data android:pathPattern=".*\\.deb" />
+                <data android:pathPattern=".*\\.rpm" />
+                <data android:pathPattern=".*\\.xar" />
+                <data android:pathPattern=".*\\.lha" />
+                <data android:pathPattern=".*\\.lzh" />
+                <data android:pathPattern=".*\\.cbr" />
+                <data android:pathPattern=".*\\.cbz" />
+            </intent-filter>
+        </activity>
 
         <activity
             android:name=".screen.textEditor.TextEditorActivity"
@@ -91,6 +167,18 @@
                 <data android:mimeType="text/*" />
                 <data android:scheme="file" />
                 <data android:scheme="content" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="content" />
+                <data android:scheme="file" />
+                <data android:host="*" />
+                <data android:mimeType="application/octet-stream" />
+                <data android:mimeType="application/xml" />
+                <data android:pathPattern=".*\\.config" />
+                <data android:pathPattern=".*\\.CONFIG" />
             </intent-filter>
         </activity>
 

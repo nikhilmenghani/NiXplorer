@@ -35,7 +35,8 @@ object FileMimeType {
     @JvmField
     val archiveFileType = arrayOf(
         "zip", "7z", "tar", "jar", "gz", "xz", "obb", "rar",
-        "iso", "bz2", "tgz", "tbz2", "lz", "lzma"
+        "iso", "bz2", "tgz", "tbz2", "tbz", "txz", "lz", "lzma", "z", "zst", "zstd", "lz4",
+        "cab", "cpio", "ar", "deb", "rpm", "xar", "lha", "lzh", "cbz", "cbr", "xapk", "apkm"
     )
 
     @JvmField
@@ -57,7 +58,7 @@ object FileMimeType {
     @JvmField
     val editableFileType = arrayOf(
         "txt", "text", "log", "dsc", "apt", "rtf", "rtx", "md",
-        "csv", "tsv", "ini", "conf", "cfg", "nfo", "json", "xml"
+        "csv", "tsv", "ini", "conf", "cfg", "config", "nfo", "json", "xml"
     )
 
     @JvmField

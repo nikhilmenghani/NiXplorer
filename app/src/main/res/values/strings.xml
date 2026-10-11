@@ -555,4 +555,6 @@
     <string name="empty_folders_cleaning">Processed %1$d folder groups…</string>
     <string name="empty_folders_result">Removed %1$d empty folders. %2$d groups were kept because they changed or could not be removed.</string>
     <string name="empty_folders_failed">Unable to complete empty-folder cleanup. Refresh to check the current folders.</string>
+    <string name="archive_opening">Opening archive…</string>
+    <string name="archive_open_failed">Unable to open this archive. It may be damaged, encrypted, contain unsupported entries, or need more temporary storage. ZIP, RAR/RAR5, 7z, TAR, compressed TAR, ISO, CAB, CPIO, and other common formats are supported.</string>
 </resources>

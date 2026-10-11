@@ -171,4 +171,5 @@ dependencies {
     implementation(libs.gson)
     implementation(libs.storage)
     implementation(libs.zip4j)
+    implementation("me.zhanghai.android.libarchive:library:1.1.6")
 }
