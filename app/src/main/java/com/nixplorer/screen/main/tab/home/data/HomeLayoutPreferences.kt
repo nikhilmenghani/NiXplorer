@@ -103,7 +103,7 @@ data class HomeLayout(
             if (sections.none { it.id == id }) additions.add(HomeSectionConfig(id, type, globalClass.getString(title), true,
                 (sections.maxOfOrNull { it.order } ?: -1) + additions.size + 1))
         }
-        return sections + additions
+        return (sections + additions).filter { it.type != HomeSectionType.JUMP_TO_PATH }
     }
 }
 

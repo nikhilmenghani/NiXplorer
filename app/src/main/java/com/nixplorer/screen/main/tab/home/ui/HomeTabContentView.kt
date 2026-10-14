@@ -170,46 +170,25 @@ fun ColumnScope.HomeTabContentView(tab: HomeTab) {
             .verticalScroll(rememberScrollState()),
         verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        enabledSections.filter { showRecentFiles || it.type != HomeSectionType.RECENT_FILES }.forEach { section ->
-            when (section.type) {
-                HomeSectionType.RECENT_FILES -> {
-                    RecentFilesSection(tab = tab, mainActivityManager = mainActivityManager)
+        val shortcutTypes = setOf(HomeSectionType.BOOKMARKS, HomeSectionType.RECYCLE_BIN,
+            HomeSectionType.ANALYZE_STORAGE, HomeSectionType.RECENTS)
+        val visibleSections = enabledSections.filter {
+            it.type != HomeSectionType.JUMP_TO_PATH &&
+                (showRecentFiles || it.type != HomeSectionType.RECENT_FILES) &&
+                (it.type != HomeSectionType.BOOKMARKS || globalClass.preferencesManager.bookmarks.isNotEmpty())
+        }
+        val shortcuts = visibleSections.filter { it.type in shortcutTypes }
+        visibleSections.forEach { section ->
+            if (section.type in shortcutTypes) {
+                if (section == shortcuts.firstOrNull()) {
+                    HomeShortcuts(shortcuts, mainActivityManager)
                 }
-
-                HomeSectionType.CATEGORIES -> {
-                    CategoriesSection(tab = tab)
-                }
-
-                HomeSectionType.STORAGE -> {
-                    StorageSection(mainActivityManager = mainActivityManager)
-                }
-
-                HomeSectionType.BOOKMARKS -> {
-                    BookmarksSection(mainActivityManager = mainActivityManager)
-                }
-
-                HomeSectionType.RECYCLE_BIN -> {
-                    RecycleBinSection(mainActivityManager = mainActivityManager)
-                }
-
-                HomeSectionType.JUMP_TO_PATH -> {
-                    JumpToPathSection(mainActivityManager = mainActivityManager)
-                }
-
-                HomeSectionType.PINNED_FILES -> {
-                    PinnedFilesSection(tab = tab, mainActivityManager = mainActivityManager)
-                }
-                HomeSectionType.ANALYZE_STORAGE -> {
-                    val context = LocalContext.current
-                    HomeActionRow(stringResource(R.string.analyze_storage), Icons.Rounded.Storage) {
-                        context.startActivity(android.content.Intent(context, com.nixplorer.screen.storage.StorageAnalyzerActivity::class.java))
-                    }
-                }
-                HomeSectionType.RECENTS -> {
-                    HomeActionRow(stringResource(R.string.recent_files), Icons.Rounded.History) {
-                        mainActivityManager.replaceCurrentTabWith(FilesTab(VirtualFileHolder(RECENT)))
-                    }
-                }
+            } else when (section.type) {
+                HomeSectionType.RECENT_FILES -> RecentFilesSection(tab, mainActivityManager)
+                HomeSectionType.CATEGORIES -> CategoriesSection(tab)
+                HomeSectionType.STORAGE -> StorageSection(mainActivityManager)
+                HomeSectionType.PINNED_FILES -> PinnedFilesSection(tab, mainActivityManager)
+                else -> Unit
             }
         }
     }
@@ -575,99 +554,42 @@ private fun StorageSection(
 }
 
 @Composable
-private fun HomeActionRow(title: String, icon: ImageVector, onClick: () -> Unit) {
-    Column(Modifier.fillMaxWidth().padding(horizontal = 12.dp)
-        .background(MaterialTheme.colorScheme.surfaceContainerLow, RoundedCornerShape(12.dp))
-        .border(0.5.dp, MaterialTheme.colorScheme.surfaceContainerHighest, RoundedCornerShape(12.dp))
-        .clip(RoundedCornerShape(12.dp))) {
-        SimpleNewTabViewItem(title = title, imageVector = icon, onClick = onClick)
-    }
-}
-
-@Composable
-private fun BookmarksSection(
-    mainActivityManager: MainActivityManager
-) {
-    if (globalClass.preferencesManager.bookmarks.isNotEmpty()) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 12.dp)
-                .background(
-                    shape = RoundedCornerShape(12.dp),
-                    color = MaterialTheme.colorScheme.surfaceContainerLow
-                )
-                .border(
-                    width = 0.5.dp,
-                    color = MaterialTheme.colorScheme.surfaceContainerHighest,
-                    shape = RoundedCornerShape(12.dp)
-                )
-                .clip(RoundedCornerShape(12.dp))
-        ) {
-            SimpleNewTabViewItem(
-                title = stringResource(R.string.bookmarks),
-                imageVector = Icons.Rounded.Bookmark
-            ) {
-                mainActivityManager.replaceCurrentTabWith(
-                    FilesTab(VirtualFileHolder(BOOKMARKS))
-                )
+private fun HomeShortcuts(sections: List<HomeSectionConfig>, manager: MainActivityManager) {
+    val context = LocalContext.current
+    Column(Modifier.padding(horizontal = 12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        sections.chunked(2).forEach { pair ->
+            Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                pair.forEach { section ->
+                    val icon = when (section.type) {
+                        HomeSectionType.BOOKMARKS -> Icons.Rounded.Bookmark
+                        HomeSectionType.RECYCLE_BIN -> Icons.Rounded.DeleteSweep
+                        HomeSectionType.ANALYZE_STORAGE -> Icons.Rounded.Storage
+                        else -> Icons.Rounded.History
+                    }
+                    Row(
+                        Modifier.weight(1f).fillMaxHeight()
+                            .background(MaterialTheme.colorScheme.surfaceContainerLow, RoundedCornerShape(12.dp))
+                            .border(0.5.dp, MaterialTheme.colorScheme.surfaceContainerHighest, RoundedCornerShape(12.dp))
+                            .clip(RoundedCornerShape(12.dp))
+                            .clickable {
+                                when (section.type) {
+                                    HomeSectionType.BOOKMARKS -> manager.replaceCurrentTabWith(FilesTab(VirtualFileHolder(BOOKMARKS)))
+                                    HomeSectionType.RECYCLE_BIN -> manager.replaceCurrentTabWith(FilesTab(globalClass.recycleBinDir))
+                                    HomeSectionType.RECENTS -> manager.replaceCurrentTabWith(FilesTab(VirtualFileHolder(RECENT)))
+                                    HomeSectionType.ANALYZE_STORAGE -> context.startActivity(android.content.Intent(context,
+                                        com.nixplorer.screen.storage.StorageAnalyzerActivity::class.java))
+                                    else -> Unit
+                                }
+                            }.padding(horizontal = 12.dp, vertical = 16.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Icon(icon, contentDescription = null, modifier = Modifier.size(24.dp))
+                        Text(section.title, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+                    }
+                }
+                if (pair.size == 1) Box(Modifier.weight(1f))
             }
-        }
-    }
-}
-
-@Composable
-private fun RecycleBinSection(
-    mainActivityManager: MainActivityManager
-) {
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 12.dp)
-            .background(
-                shape = RoundedCornerShape(12.dp),
-                color = MaterialTheme.colorScheme.surfaceContainerLow
-            )
-            .border(
-                width = 0.5.dp,
-                color = MaterialTheme.colorScheme.surfaceContainerHighest,
-                shape = RoundedCornerShape(12.dp)
-            )
-            .clip(RoundedCornerShape(12.dp))
-    ) {
-        SimpleNewTabViewItem(
-            title = stringResource(R.string.recycle_bin),
-            imageVector = Icons.Rounded.DeleteSweep
-        ) {
-            mainActivityManager.replaceCurrentTabWith(FilesTab(globalClass.recycleBinDir))
-        }
-    }
-}
-
-@Composable
-private fun JumpToPathSection(
-    mainActivityManager: MainActivityManager
-) {
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 12.dp)
-            .background(
-                shape = RoundedCornerShape(12.dp),
-                color = MaterialTheme.colorScheme.surfaceContainerLow
-            )
-            .border(
-                width = 0.5.dp,
-                color = MaterialTheme.colorScheme.surfaceContainerHighest,
-                shape = RoundedCornerShape(12.dp)
-            )
-            .clip(RoundedCornerShape(12.dp))
-    ) {
-        SimpleNewTabViewItem(
-            title = stringResource(R.string.jump_to_path),
-            imageVector = Icons.Rounded.ArrowOutward
-        ) {
-            mainActivityManager.toggleJumpToPathDialog(true)
         }
     }
 }

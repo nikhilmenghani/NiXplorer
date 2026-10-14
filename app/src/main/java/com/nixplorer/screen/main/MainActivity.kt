@@ -304,6 +304,7 @@ class MainActivity : BaseActivity() {
                 modifier = Modifier
                     .weight(1f)
                     .nestedScroll(nestedScrollConnection),
+                userScrollEnabled = (state.tabs.getOrNull(state.selectedTabIndex) as? FilesTab)?.showCategories != true,
                 key = { state.tabs[it].id }
             ) { index ->
                 key(index) {

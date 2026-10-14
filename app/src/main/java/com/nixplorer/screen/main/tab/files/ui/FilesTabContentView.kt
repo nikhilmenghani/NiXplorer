@@ -1,11 +1,19 @@
 package com.nixplorer.screen.main.tab.files.ui
 
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalDensity
+import com.nixplorer.App.Companion.globalClass
+import com.nixplorer.screen.main.tab.home.HomeTab
+import kotlin.math.abs
 import com.nixplorer.screen.main.tab.files.FilesTab
 import com.nixplorer.screen.main.tab.files.holder.LocalFileHolder
 import com.nixplorer.screen.main.tab.files.ui.dialog.ApkPreviewDialog
@@ -31,7 +39,44 @@ fun ColumnScope.FilesTabContentView(tab: FilesTab) {
     BreadcrumbBar(tab)
     InfoRow()
     HorizontalDivider(modifier = Modifier, thickness = 1.dp)
-    FilesList(tab)
+    val swipeThreshold = with(LocalDensity.current) { 64.dp.toPx() }
+    Column(
+        Modifier.weight(1f).fillMaxWidth().then(
+            if (tab.showCategories) Modifier.pointerInput(tab.id, swipeThreshold) {
+                var distance = 0f
+                detectHorizontalDragGestures(
+                    onDragStart = { distance = 0f },
+                    onDragCancel = { distance = 0f },
+                    onDragEnd = {
+                        if (abs(distance) >= swipeThreshold) {
+                            val direction = if (distance < 0) 1 else -1
+                            val current = tab.selectedCategory?.let { tab.categories.indexOf(it) + 1 } ?: 0
+                            val next = current + direction
+                            if (next in 0..tab.categories.size) {
+                                tab.selectedCategory = if (next == 0) null else tab.categories[next - 1]
+                                tab.reloadFiles()
+                            } else {
+                                val manager = globalClass.mainActivityManager
+                                val mainState = manager.state.value
+                                val mainIndex = mainState.tabs.indexOf(tab) + direction
+                                if (mainIndex in mainState.tabs.indices) {
+                                    manager.selectTabAt(mainIndex)
+                                } else if (direction > 0) {
+                                    manager.addTabAndSelect(HomeTab())
+                                }
+                            }
+                        }
+                        distance = 0f
+                    }
+                ) { change, delta ->
+                    change.consume()
+                    distance += delta
+                }
+            } else Modifier
+        )
+    ) {
+        FilesList(tab)
+    }
     BottomOptionsBar(tab)
 }
 
