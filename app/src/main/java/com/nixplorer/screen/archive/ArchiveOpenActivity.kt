@@ -105,6 +105,17 @@ class ArchiveOpenActivity : BaseActivity() {
                 LaunchedEffect(prepared, attempt) {
                     val file = prepared ?: return@LaunchedEffect
                     val password = credential
+                    if (file.extension.equals("apk", ignoreCase = true) &&
+                        !intent.getBooleanExtra("explore_archive", false)) {
+                        val tab = com.nixplorer.screen.main.tab.files.FilesTab(LocalFileHolder(requireNotNull(file.parentFile)))
+                        globalClass.mainActivityManager.addTabAndSelect(tab)
+                        tab.toggleApkDialog(LocalFileHolder(file))
+                        opened = true
+                        startActivity(Intent(this@ArchiveOpenActivity, MainActivity::class.java)
+                            .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP))
+                        finish()
+                        return@LaunchedEffect
+                    }
                     try {
                         val archive = withContext(Dispatchers.IO) {
                             if (net.lingala.zip4j.ZipFile(file).use { it.isValidZipFile }) unlockZip(file, password)

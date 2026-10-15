@@ -51,6 +51,13 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CancellationException
+import com.nixplorer.screen.main.tab.files.zip.ZipTree
+import com.nixplorer.screen.main.tab.files.task.CopyTask
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -76,6 +83,8 @@ import com.nixplorer.common.ui.BottomSheetDialog
 import com.nixplorer.common.ui.Space
 import com.nixplorer.screen.main.tab.files.FilesTab
 import com.nixplorer.screen.main.tab.files.misc.ApkInfo
+import com.nixplorer.screen.main.tab.files.misc.ApkInstallAction
+import com.nixplorer.screen.main.tab.files.misc.apkInstallAction
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -86,7 +95,9 @@ fun ApkPreviewDialog(
 ) {
     if (show) {
         val context = LocalContext.current
-        val apkFile = tab.targetFile!!
+        val scope = rememberCoroutineScope()
+        var preparingExtraction by remember { mutableStateOf(false) }
+        val apkFile = tab.targetFile as com.nixplorer.screen.main.tab.files.holder.LocalFileHolder
         val packageManager = globalClass.packageManager
 
         var apkInfo by remember { mutableStateOf<ApkInfo?>(null) }
@@ -111,6 +122,7 @@ fun ApkPreviewDialog(
                     // Check if app is installed
                     var isInstalled = false
                     var installedVersion: String? = null
+                    var installedVersionCode: Long? = null
                     var installTime: String? = null
                     var lastUpdateTime: String? = null
 
@@ -118,7 +130,10 @@ fun ApkPreviewDialog(
                         val installedInfo =
                             packageManager.getPackageInfo(archiveInfo.packageName, 0)
                         isInstalled = true
-                        installedVersion = installedInfo.versionName
+                        val installedCode = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P)
+                            installedInfo.longVersionCode else installedInfo.versionCode.toLong()
+                        installedVersionCode = installedCode
+                        installedVersion = "${installedInfo.versionName ?: globalClass.getString(R.string.unknown)} ($installedCode)"
                         installTime = installedInfo.firstInstallTime.toFormattedDate()
                         lastUpdateTime = installedInfo.lastUpdateTime.toFormattedDate()
                     } catch (_: PackageManager.NameNotFoundException) {
@@ -145,7 +160,8 @@ fun ApkPreviewDialog(
                         targetSdkVersion = archiveInfo.applicationInfo?.targetSdkVersion,
                         permissions = permissions,
                         installTime = installTime,
-                        lastUpdateTime = lastUpdateTime
+                        lastUpdateTime = lastUpdateTime,
+                        installedVersionCode = installedVersionCode
                     )
                 }
             } catch (e: Exception) {
@@ -276,7 +292,7 @@ fun ApkPreviewDialog(
                                 if (info.isInstalled) {
                                     AssistChip(
                                         onClick = { },
-                                        label = { Text(stringResource(R.string.installed)) },
+                                        label = { Text(stringResource(R.string.apk_installed_version, info.installedVersion.orEmpty())) },
                                         leadingIcon = {
                                             Icon(
                                                 Icons.Default.CheckCircle,
@@ -340,11 +356,47 @@ fun ApkPreviewDialog(
                                 )
                                 Space(size = 8.dp)
                                 Text(
-                                    if (info.isInstalled) stringResource(R.string.update) else stringResource(
-                                        R.string.install
-                                    )
+                                    stringResource(when (apkInstallAction(info.versionCode.toLong(), info.installedVersionCode)) {
+                                        ApkInstallAction.INSTALL -> R.string.install
+                                        ApkInstallAction.REINSTALL -> R.string.apk_reinstall
+                                        ApkInstallAction.UPDATE -> R.string.update
+                                        ApkInstallAction.DOWNGRADE -> R.string.apk_downgrade
+                                    })
                                 )
                             }
+                        }
+
+                        OutlinedButton(
+                            enabled = !preparingExtraction,
+                            modifier = Modifier.fillMaxWidth(),
+                            onClick = {
+                                preparingExtraction = true
+                                scope.launch {
+                                    try {
+                                        val entries = withContext(Dispatchers.IO) {
+                                            ZipTree(apkFile).createRootContentHolder().listContent()
+                                        }
+                                        if (entries.isEmpty()) {
+                                            globalClass.showMsg(R.string.empty_folder)
+                                        } else {
+                                            globalClass.taskManager.addTask(CopyTask(entries, deleteSourceFiles = false), false)
+                                            globalClass.showMsg(R.string.apk_extract_destination_hint)
+                                            onDismissRequest()
+                                        }
+                                    } catch (e: CancellationException) {
+                                        throw e
+                                    } catch (e: Exception) {
+                                        logger.logError(e)
+                                        globalClass.showMsg(e.message ?: "Unable to extract APK")
+                                    } finally {
+                                        preparingExtraction = false
+                                    }
+                                }
+                            }
+                        ) {
+                            Icon(Icons.Default.FolderOpen, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Space(size = 8.dp)
+                            Text(stringResource(R.string.extract))
                         }
 
                         if (!showExtraDetails) {

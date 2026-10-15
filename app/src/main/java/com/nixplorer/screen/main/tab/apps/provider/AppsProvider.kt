@@ -11,28 +11,60 @@ import com.nixplorer.common.isNot
 import com.nixplorer.screen.main.tab.apps.holder.AppHolder
 import java.io.File
 import java.util.Date
+import kotlinx.coroutines.ensureActive
 
-suspend fun getInstalledApps(context: Context): List<AppHolder> {
-    val packageManager = context.packageManager
-    val apps = packageManager.getInstalledApplications(PackageManager.GET_META_DATA)
+private object InstalledAppsCache {
+    val cache = InvalidatingCache<List<AppHolder>>()
+    private var registered = false
 
-    return apps.mapNotNull { appInfo ->
-        try {
-            createAppHolder(packageManager, appInfo)
-        } catch (_: Exception) {
-            null // Skip apps that can't be processed
+    @Synchronized fun observe(context: Context) {
+        if (registered) return
+        val appContext = context.applicationContext
+        val receiver = object : android.content.BroadcastReceiver() {
+            override fun onReceive(context: Context?, intent: android.content.Intent?) { cache.invalidate() }
+        }
+        val packages = android.content.IntentFilter().apply {
+            addAction(android.content.Intent.ACTION_PACKAGE_ADDED)
+            addAction(android.content.Intent.ACTION_PACKAGE_REMOVED)
+            addAction(android.content.Intent.ACTION_PACKAGE_CHANGED)
+            addAction(android.content.Intent.ACTION_PACKAGE_REPLACED)
+            addDataScheme("package")
+        }
+        val storage = android.content.IntentFilter().apply {
+            addAction(android.content.Intent.ACTION_EXTERNAL_APPLICATIONS_AVAILABLE)
+            addAction(android.content.Intent.ACTION_EXTERNAL_APPLICATIONS_UNAVAILABLE)
+        }
+        androidx.core.content.ContextCompat.registerReceiver(appContext, receiver, packages,
+            androidx.core.content.ContextCompat.RECEIVER_NOT_EXPORTED)
+        androidx.core.content.ContextCompat.registerReceiver(appContext, receiver, storage,
+            androidx.core.content.ContextCompat.RECEIVER_NOT_EXPORTED)
+        registered = true
+    }
+}
+
+suspend fun getInstalledApps(context: Context): List<AppHolder> = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+    InstalledAppsCache.observe(context)
+    val locale = context.resources.configuration.locales.toLanguageTags()
+    InstalledAppsCache.cache.get(locale) {
+        val packageManager = context.packageManager
+        // One batch request supplies versions, timestamps, permissions and ApplicationInfo.
+        // Previously there was an additional Binder round trip for every installed application.
+        packageManager.getInstalledPackages(PackageManager.GET_PERMISSIONS).mapNotNull { packageInfo ->
+            kotlinx.coroutines.currentCoroutineContext().ensureActive()
+            val appInfo = packageInfo.applicationInfo ?: return@mapNotNull null
+            try {
+                createAppHolder(packageManager, appInfo, packageInfo)
+            } catch (e: kotlinx.coroutines.CancellationException) { throw e }
+            catch (_: android.content.res.Resources.NotFoundException) { null }
         }
     }
 }
 
 private fun createAppHolder(
     packageManager: PackageManager,
-    appInfo: ApplicationInfo
+    appInfo: ApplicationInfo,
+    packageInfo: android.content.pm.PackageInfo
 ): AppHolder {
-    val packageInfo = packageManager.getPackageInfo(
-        appInfo.packageName,
-        PackageManager.GET_PERMISSIONS or PackageManager.GET_META_DATA
-    )
     val appFile = File(appInfo.sourceDir)
 
     val permissions = packageInfo.requestedPermissions?.toList() ?: emptyList()

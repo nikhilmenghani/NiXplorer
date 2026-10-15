@@ -15,5 +15,6 @@ data class ApkInfo(
     val targetSdkVersion: Int?,
     val permissions: List<String>,
     val installTime: String?,
-    val lastUpdateTime: String?
+    val lastUpdateTime: String?,
+    val installedVersionCode: Long? = null
 )

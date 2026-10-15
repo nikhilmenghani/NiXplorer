@@ -27,6 +27,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
 import com.nixplorer.R
+import com.nixplorer.screen.main.tab.apps.provider.AppUsageSnapshot
 import com.nixplorer.common.limitLength
 import com.nixplorer.common.toFormattedSize
 import com.nixplorer.common.ui.Space
@@ -34,8 +35,9 @@ import com.nixplorer.screen.main.tab.apps.holder.AppHolder
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun AppListItem(
+internal fun AppListItem(
     app: AppHolder,
+    usage: AppUsageSnapshot?,
     onClick: () -> Unit
 ) {
     Column(Modifier.fillMaxWidth()) {
@@ -79,6 +81,20 @@ fun AppListItem(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
+                )
+
+                val lastOpened = usage?.lastOpened?.get(app.packageName)
+                Text(
+                    text = when {
+                        usage == null -> stringResource(R.string.apps_usage_loading)
+                        !usage.available -> stringResource(R.string.apps_usage_unavailable)
+                        lastOpened == null -> stringResource(R.string.apps_no_usage_recorded)
+                        else -> stringResource(R.string.apps_last_opened,
+                            android.text.format.DateUtils.getRelativeTimeSpanString(lastOpened,
+                                System.currentTimeMillis(), android.text.format.DateUtils.MINUTE_IN_MILLIS).toString())
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
 
                 Row(

@@ -4,6 +4,7 @@ import android.app.Activity
 import android.app.Instrumentation
 import android.os.Bundle
 import com.nixplorer.App.Companion.globalClass
+import com.nixplorer.screen.storage.hasStorageUsageAccess
 import com.nixplorer.screen.main.tab.files.holder.LocalFileHolder
 import com.nixplorer.screen.main.tab.files.holder.ZipFileHolder
 import com.nixplorer.screen.main.tab.files.task.*
@@ -23,6 +24,8 @@ class OperationSafetyInstrumentation : Instrumentation() {
     private var phase: String? = null
     override fun onCreate(arguments: Bundle?) { phase = arguments?.getString("phase"); super.onCreate(arguments); start() }
     override fun onStart() {
+        if (phase == "appUsage") { appUsage(); return }
+        if (phase == "appsLoading") { appsLoading(); return }
         if (phase == "prepareRecovery") { prepareRecovery(); return }
         if (phase == "verifyRecovery") { verifyRecovery(); return }
         root = File(targetContext.cacheDir, "operation-safety-${UUID.randomUUID()}").apply { check(mkdirs()) }
@@ -78,6 +81,85 @@ class OperationSafetyInstrumentation : Instrumentation() {
         check(copied.readText() == "changed after successful copy")
         check(File(destination, "missing").readText() == "retry me")
     }
+    private fun appUsage() {
+        try {
+            runBlocking {
+                val snapshot = com.nixplorer.screen.main.tab.apps.provider.loadAppUsage(targetContext)
+                check(snapshot.hasAccess == targetContext.hasStorageUsageAccess())
+                if (snapshot.hasAccess) {
+                    check(snapshot.available)
+                    check(snapshot.lastOpened.isNotEmpty()) { "No usage history returned on granted device" }
+                    check(snapshot.lastOpened.values.all { it > 0 })
+                } else check(snapshot.lastOpened.isEmpty())
+                lateinit var tab: com.nixplorer.screen.main.tab.apps.AppsTab
+                withContext(Dispatchers.Main) { tab = com.nixplorer.screen.main.tab.apps.AppsTab(); tab.fetchInstalledApps() }
+                withTimeout(10000) { while (withContext(Dispatchers.Main) { tab.usage == null }) delay(10) }
+                withContext(Dispatchers.Main) {
+                    tab.selectedChoice = 2
+                    tab.sortOption = com.nixplorer.screen.main.tab.apps.AppsTab.SortOption.LAST_OPENED
+                    tab.updateAppsList()
+                    val timestamps = tab.appsList.map { tab.usage?.lastOpened?.get(it.packageName) ?: 0L }
+                    check(timestamps == timestamps.sorted()) { "Last-opened sort order incorrect" }
+                    tab.onTabRemoved()
+                }
+                val pm = targetContext.packageManager
+                val installed = pm.getPackageInfo(targetContext.packageName, 0)
+                val apk = requireNotNull(pm.getPackageArchiveInfo(targetContext.applicationInfo.sourceDir, 0))
+                check(apk.packageName == installed.packageName && apk.longVersionCode == installed.longVersionCode)
+                finish(Activity.RESULT_OK, Bundle().apply { putString("stream", "PASS usage access=${snapshot.hasAccess}, ${snapshot.lastOpened.size} apps with recorded use; oldest-first sorting and installed APK metadata passed.\n") })
+            }
+        } catch (error: Throwable) {
+            finish(Activity.RESULT_CANCELED, Bundle().apply { putString("stream", "FAILED: ${error.stackTraceToString()}") })
+        }
+    }
+
+    private fun appsLoading() {
+        try {
+            runBlocking {
+                val pm = targetContext.packageManager
+                // Time the previous per-package metadata query pattern without changing installed apps.
+                val baselineStart = android.os.SystemClock.elapsedRealtime()
+                val apps = pm.getInstalledApplications(android.content.pm.PackageManager.GET_META_DATA)
+                apps.forEach { info ->
+                    pm.getPackageInfo(info.packageName, android.content.pm.PackageManager.GET_PERMISSIONS or android.content.pm.PackageManager.GET_META_DATA)
+                    info.loadLabel(pm)
+                    File(info.sourceDir).length()
+                }
+                val baseline = android.os.SystemClock.elapsedRealtime() - baselineStart
+                val coldStart = android.os.SystemClock.elapsedRealtime()
+                val cold = com.nixplorer.screen.main.tab.apps.provider.getInstalledApps(targetContext)
+                val coldMs = android.os.SystemClock.elapsedRealtime() - coldStart
+                val warmStart = android.os.SystemClock.elapsedRealtime()
+                val warm = com.nixplorer.screen.main.tab.apps.provider.getInstalledApps(targetContext)
+                val warmMs = android.os.SystemClock.elapsedRealtime() - warmStart
+                check(cold === warm) { "Repeated opens did not reuse cached data" }
+                check(cold.map { it.packageName }.toSet() == apps.map { it.packageName }.toSet()) { "Installed apps missing" }
+                check(cold.any { it.packageName == targetContext.packageName })
+                lateinit var tab: com.nixplorer.screen.main.tab.apps.AppsTab
+                withContext(Dispatchers.Main) { tab = com.nixplorer.screen.main.tab.apps.AppsTab(); tab.fetchInstalledApps() }
+                withTimeout(10000) { while (withContext(Dispatchers.Main) { tab.userApps.isEmpty() && tab.systemApps.isEmpty() || tab.isLoading }) delay(10) }
+                val count = withContext(Dispatchers.Main) { tab.userApps.size + tab.systemApps.size }
+                withContext(Dispatchers.Main) { tab.fetchInstalledApps() }
+                delay(100)
+                withContext(Dispatchers.Main) {
+                    check(tab.userApps.size + tab.systemApps.size == count) { "Refresh duplicated apps" }
+                    tab.selectedChoice = 2
+                    tab.searchQuery = targetContext.packageName
+                    tab.performSearch()
+                    val matches = cold.filter { it.name.contains(targetContext.packageName, true) || it.packageName.contains(targetContext.packageName, true) }
+                    check(tab.appsList.map { it.packageName }.toSet() == matches.map { it.packageName }.toSet()) { "Search results differ" }
+                    tab.sortOption = com.nixplorer.screen.main.tab.apps.AppsTab.SortOption.SIZE
+                    tab.updateAppsList()
+                    check(tab.appsList.map { it.packageName }.toSet() == matches.map { it.packageName }.toSet()) { "Sorting lost the search filter" }
+                    tab.onTabRemoved()
+                }
+                finish(Activity.RESULT_OK, Bundle().apply { putString("stream", "PASS Apps loading: ${cold.size} apps; previous query pattern ${baseline}ms; new cold ${coldMs}ms; cached ${warmMs}ms. Repeated refresh, search and sorting passed.\n") })
+            }
+        } catch (error: Throwable) {
+            finish(Activity.RESULT_CANCELED, Bundle().apply { putString("stream", "FAILED: ${error.stackTraceToString()}") })
+        }
+    }
+
     private suspend fun folderMove() {
         val source = fixture("folder-source")
         val destination = fixture("folder-dest")

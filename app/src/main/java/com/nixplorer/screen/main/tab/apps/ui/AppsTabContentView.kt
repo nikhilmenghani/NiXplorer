@@ -19,6 +19,9 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.automirrored.rounded.Sort
+import androidx.compose.material.icons.rounded.ArrowUpward
+import androidx.compose.material.icons.rounded.ArrowDownward
+import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Cancel
 import androidx.compose.material.icons.rounded.Pause
 import androidx.compose.material.icons.rounded.Search
@@ -45,6 +48,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.material3.TextButton
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -61,12 +66,11 @@ import com.nixplorer.screen.main.tab.apps.AppsTab
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AppsTabContentView(tab: AppsTab) {
+    val context = LocalContext.current
     var showSortMenu by remember { mutableStateOf(false) }
 
     LaunchedEffect(tab.id) {
-        if (tab.appsList.isEmpty()) {
-            tab.fetchInstalledApps()
-        }
+        tab.fetchInstalledApps()
     }
 
     LaunchedEffect(tab.selectedChoice, tab.sortOption) {
@@ -89,9 +93,23 @@ fun AppsTabContentView(tab: AppsTab) {
                     Space(8.dp)
                 }
 
+                if (tab.usage?.hasAccess == false) {
+                    item {
+                        TextButton(onClick = {
+                            val intent = android.content.Intent(android.provider.Settings.ACTION_USAGE_ACCESS_SETTINGS,
+                                android.net.Uri.parse("package:${context.packageName}"))
+                            runCatching { context.startActivity(intent) }.recoverCatching {
+                                context.startActivity(android.content.Intent(android.provider.Settings.ACTION_USAGE_ACCESS_SETTINGS))
+                            }
+                        }, modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
+                            Text(stringResource(R.string.apps_usage_access_hint))
+                        }
+                    }
+                }
                 items(tab.appsList, key = { it.packageName }) { app ->
                     AppListItem(
                         app = app,
+                        usage = tab.usage,
                         onClick = { tab.previewAppDialog = app }
                     )
                 }
@@ -191,34 +209,45 @@ fun AppsTabContentView(tab: AppsTab) {
                         expanded = showSortMenu,
                         onDismissRequest = { showSortMenu = false }
                     ) {
-                        DropdownMenuItem(
-                            text = { Text(stringResource(R.string.name)) },
-                            onClick = {
-                                tab.sortOption = AppsTab.SortOption.NAME
-                                showSortMenu = false
+                        AppsTab.SortOption.entries.forEach { option ->
+                            val ascending = tab.isAscending(option)
+                            val title = when (option) {
+                                AppsTab.SortOption.NAME -> R.string.name
+                                AppsTab.SortOption.SIZE -> R.string.size
+                                AppsTab.SortOption.INSTALL_DATE -> R.string.install_date
+                                AppsTab.SortOption.UPDATE_DATE -> R.string.update_date
+                                AppsTab.SortOption.LAST_OPENED -> R.string.apps_last_opened_label
                             }
-                        )
-                        DropdownMenuItem(
-                            text = { Text(stringResource(R.string.size)) },
-                            onClick = {
-                                tab.sortOption = AppsTab.SortOption.SIZE
-                                showSortMenu = false
+                            val order = when (option) {
+                                AppsTab.SortOption.NAME -> if (ascending) R.string.order_a_z else R.string.order_z_a
+                                AppsTab.SortOption.SIZE -> if (ascending) R.string.smallest_first else R.string.largest_first
+                                else -> if (ascending) R.string.oldest_first else R.string.newest_first
                             }
-                        )
-                        DropdownMenuItem(
-                            text = { Text(stringResource(R.string.install_date)) },
-                            onClick = {
-                                tab.sortOption = AppsTab.SortOption.INSTALL_DATE
-                                showSortMenu = false
-                            }
-                        )
-                        DropdownMenuItem(
-                            text = { Text(stringResource(R.string.update_date)) },
-                            onClick = {
-                                tab.sortOption = AppsTab.SortOption.UPDATE_DATE
-                                showSortMenu = false
-                            }
-                        )
+                            val enabled = option != AppsTab.SortOption.LAST_OPENED || tab.usage?.available == true
+                            DropdownMenuItem(
+                                enabled = enabled,
+                                text = {
+                                    Column {
+                                        Text(stringResource(title))
+                                        Text(stringResource(order), style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    }
+                                },
+                                leadingIcon = {
+                                    if (tab.sortOption == option) Icon(Icons.Rounded.Check, contentDescription = null)
+                                },
+                                trailingIcon = {
+                                    IconButton(enabled = enabled, onClick = { tab.toggleSortOrder(option) }) {
+                                        Icon(if (ascending) Icons.Rounded.ArrowUpward else Icons.Rounded.ArrowDownward,
+                                            contentDescription = stringResource(R.string.apps_toggle_sort_order))
+                                    }
+                                },
+                                onClick = {
+                                    tab.sortOption = option
+                                    showSortMenu = false
+                                }
+                            )
+                        }
                     }
                 }
             }

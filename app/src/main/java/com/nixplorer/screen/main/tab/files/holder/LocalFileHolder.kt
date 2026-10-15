@@ -159,6 +159,17 @@ class LocalFileHolder(val file: File) : ContentHolder() {
             }
         }
 
+        // Home shortcuts open holders directly, bypassing FilesTab.openFile.
+        // Explicit ZIP exploration and external installation must still bypass the info sheet.
+        if (isApk() && customMimeType == null && !anonymous) {
+            val manager = globalClass.mainActivityManager
+            val tab = manager.getActiveTab() as? FilesTab ?: FilesTab(
+                LocalFileHolder(requireNotNull(file.parentFile))
+            ).also { manager.addTabAndSelect(it) }
+            tab.toggleApkDialog(this)
+            return
+        }
+
         if (handleSupportedFiles(skipSupportedExtensions, context)) {
             return
         }
@@ -320,7 +331,8 @@ class LocalFileHolder(val file: File) : ContentHolder() {
                     runCatching { net.lingala.zip4j.ZipFile(file).use { it.isEncrypted } }.getOrDefault(false)
                 }
                 if (encrypted) context.startActivity(Intent(context, com.nixplorer.screen.archive.ArchiveOpenActivity::class.java)
-                    .setDataAndType(createUri(), mimeType).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION))
+                    .setDataAndType(createUri(), mimeType).putExtra("explore_archive", true)
+                    .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION))
                 else globalClass.zipManager.openArchive(this@LocalFileHolder)
             }
             return true

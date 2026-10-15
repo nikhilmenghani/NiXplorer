@@ -2,6 +2,7 @@ package com.nixplorer.screen.main.tab.apps
 
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -14,12 +15,19 @@ import com.nixplorer.screen.main.tab.apps.provider.getInstalledApps
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.CancellationException
+import com.nixplorer.screen.main.tab.apps.provider.AppUsageSnapshot
+import com.nixplorer.screen.main.tab.apps.provider.loadAppUsage
 
 class AppsTab : Tab() {
     override val id = globalClass.generateUid()
     override val header = globalClass.getString(R.string.apps_tab_header)
 
-    private val scope = CoroutineScope(Dispatchers.IO)
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    private var loadJob: Job? = null
 
     val appsList = mutableStateListOf<AppHolder>()
     val systemApps = ArrayList<AppHolder>()
@@ -31,10 +39,23 @@ class AppsTab : Tab() {
     var searchQuery by mutableStateOf(emptyString)
     var isSearching by mutableStateOf(false)
     var isLoading by mutableStateOf(false)
+    internal var usage by mutableStateOf<AppUsageSnapshot?>(null)
+        private set
     var sortOption by mutableStateOf(SortOption.NAME)
 
+    private val ascendingOrders = mutableStateMapOf<SortOption, Boolean>()
+
+    fun isAscending(option: SortOption) = ascendingOrders[option]
+        ?: (option == SortOption.NAME || option == SortOption.LAST_OPENED)
+
+    fun toggleSortOrder(option: SortOption) {
+        ascendingOrders[option] = !isAscending(option)
+        sortOption = option
+        updateAppsList()
+    }
+
     enum class SortOption {
-        NAME, SIZE, INSTALL_DATE, UPDATE_DATE
+        NAME, SIZE, INSTALL_DATE, UPDATE_DATE, LAST_OPENED
     }
 
     override suspend fun getSubtitle() = emptyString
@@ -44,6 +65,7 @@ class AppsTab : Tab() {
     override fun onTabResumed() {
         super.onTabResumed()
         requestHomeToolbarUpdate()
+        fetchInstalledApps()
     }
 
     override fun onTabStarted() {
@@ -61,76 +83,60 @@ class AppsTab : Tab() {
         return false
     }
 
+    override fun onTabRemoved() {
+        scope.cancel()
+        super.onTabRemoved()
+    }
+
     fun fetchInstalledApps() {
-        isLoading = true
-        scope.launch {
+        if (loadJob?.isActive == true) return
+        loadJob = scope.launch {
+            // Keep an already loaded list visible during refresh.
+            isLoading = appsList.isEmpty()
             try {
                 val apps = getInstalledApps(globalClass)
+                systemApps.clear()
+                userApps.clear()
                 apps.forEach { app ->
-                    if (app.isSystemApp) systemApps.add(app)
-                    else userApps.add(app)
+                    if (app.isSystemApp) systemApps.add(app) else userApps.add(app)
                 }
                 updateAppsList()
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
-                e.printStackTrace()
+                globalClass.logger.logError(e)
             } finally {
                 isLoading = false
             }
+            try {
+                usage = loadAppUsage(globalClass)
+            } catch (e: CancellationException) { throw e }
+            catch (e: Exception) {
+                globalClass.logger.logError(e)
+                usage = AppUsageSnapshot(true, false)
+            }
+            updateAppsList()
         }
     }
 
     fun updateAppsList() {
-        appsList.clear()
-        val filteredApps = when (selectedChoice) {
+        val base = when (selectedChoice) {
             0 -> userApps
             1 -> systemApps
             2 -> userApps + systemApps
             else -> emptyList()
         }
-
-        val sortedApps = when (sortOption) {
-            SortOption.NAME -> filteredApps.sortedBy { it.name }
-            SortOption.SIZE -> filteredApps.sortedByDescending { it.size }
-            SortOption.INSTALL_DATE -> filteredApps.sortedByDescending { it.installDate }
-            SortOption.UPDATE_DATE -> filteredApps.sortedByDescending { it.lastUpdateDate }
+        val query = searchQuery.trim()
+        val filtered = if (query.isEmpty()) base else base.filter {
+            it.name.contains(query, ignoreCase = true) || it.packageName.contains(query, ignoreCase = true)
         }
-
-        appsList.addAll(sortedApps)
+        val sorted = sortApps(filtered, sortOption, isAscending(sortOption), usage?.lastOpened.orEmpty())
+        appsList.clear()
+        appsList.addAll(sorted)
     }
 
     fun performSearch() {
-        if (searchQuery.isBlank()) {
-            updateAppsList()
-            return
-        }
-
-        isSearching = true
-        scope.launch {
-            try {
-                val baseList = when (selectedChoice) {
-                    0 -> userApps
-                    1 -> systemApps
-                    2 -> userApps + systemApps
-                    else -> emptyList()
-                }
-
-                val filteredApps = baseList.filter { app ->
-                    app.name.contains(searchQuery, ignoreCase = true) ||
-                            app.packageName.contains(searchQuery, ignoreCase = true)
-                }
-
-                val sortedApps = when (sortOption) {
-                    SortOption.NAME -> filteredApps.sortedBy { it.name }
-                    SortOption.SIZE -> filteredApps.sortedByDescending { it.size }
-                    SortOption.INSTALL_DATE -> filteredApps.sortedByDescending { it.installDate }
-                    SortOption.UPDATE_DATE -> filteredApps.sortedByDescending { it.lastUpdateDate }
-                }
-
-                appsList.clear()
-                appsList.addAll(sortedApps)
-            } finally {
-                isSearching = false
-            }
-        }
+        updateAppsList()
+        isSearching = false
     }
 }

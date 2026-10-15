@@ -560,4 +560,16 @@
     <string name="archive_password_title">Unlock archive</string>
     <string name="archive_password">Password</string>
     <string name="archive_password_incorrect">Incorrect password. Please try again.</string>
+    <string name="apk_extract_destination_hint">Open the destination folder, then run the pending extraction from Tasks.</string>
+    <string name="apps_usage_access_hint">Allow usage access to see when apps were last opened</string>
+    <string name="apps_least_recently_opened">Last opened · oldest first</string>
+    <string name="apps_usage_loading">Loading last opened…</string>
+    <string name="apps_usage_unavailable">Last opened unavailable</string>
+    <string name="apps_no_usage_recorded">No usage recorded</string>
+    <string name="apps_last_opened">Last opened: %1$s</string>
+    <string name="apk_installed_version">Installed version: %1$s</string>
+    <string name="apps_last_opened_label">Last opened</string>
+    <string name="apps_toggle_sort_order">Reverse sort order</string>
+    <string name="apk_reinstall">Re-install</string>
+    <string name="apk_downgrade">Downgrade</string>
 </resources>
