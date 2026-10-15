@@ -660,6 +660,11 @@ private fun SearchResultsSection(
             }
         }
 
+        searchManager.incompleteReason?.let { reason ->
+            Text(reason, modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+        }
+
         // Results List
         LazyColumn(
             modifier = Modifier.fillMaxSize(),

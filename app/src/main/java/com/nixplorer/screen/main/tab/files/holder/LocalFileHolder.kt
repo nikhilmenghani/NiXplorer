@@ -34,6 +34,7 @@ import com.nixplorer.screen.viewer.video.VideoPlayerActivity
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import androidx.lifecycle.lifecycleScope
 import java.io.File
@@ -109,12 +110,33 @@ class LocalFileHolder(val file: File) : ContentHolder() {
 
     override suspend fun isValid(): Boolean = file.exists()
 
-    override suspend fun listContent(): ArrayList<LocalFileHolder> {
+    suspend fun forEachChild(action: suspend (LocalFileHolder) -> Unit) = withContext(Dispatchers.IO) {
+        val context = kotlinx.coroutines.currentCoroutineContext()
+        try { java.nio.file.Files.readAttributes(file.toPath(), java.nio.file.attribute.BasicFileAttributes::class.java) }
+        catch (e: java.nio.file.NoSuchFileException) { throw java.io.IOException("Storage disconnected or folder no longer exists: $file", e) }
+        catch (e: java.nio.file.AccessDeniedException) { throw java.io.IOException("Permission denied: $file. Grant storage access.", e) }
+        if (!file.canRead()) throw java.nio.file.AccessDeniedException(file.path, null, "Permission denied; grant storage access")
+        var count = 0
+        var pathCharacters = 0L
+        java.nio.file.Files.newDirectoryStream(file.toPath()).use { children ->
+            for (child in children) {
+                context.ensureActive()
+                require(++count <= com.nixplorer.screen.main.tab.files.task.SafeFileOperations.MAX_ITEMS) { "Folder has too many entries; results are incomplete" }
+                pathCharacters += child.toString().length
+                require(pathCharacters <= com.nixplorer.screen.main.tab.files.task.SafeFileOperations.MAX_PLAN_PATH_CHARACTERS) { "Folder path metadata exceeds memory limit; choose smaller folders" }
+                action(LocalFileHolder(child.toFile()))
+            }
+        }
+    }
+
+    override suspend fun listContent(): ArrayList<LocalFileHolder> = withContext(Dispatchers.IO) {
         folderCount = 0
         fileCount = 0
-
-        return arrayListOf<LocalFileHolder>().apply {
-            file.listFiles()?.forEach { add(LocalFileHolder(it)) }
+        arrayListOf<LocalFileHolder>().apply {
+            forEachChild { child ->
+                if (child.isFolder) folderCount++ else fileCount++
+                add(child)
+            }
         }
     }
 
@@ -173,14 +195,7 @@ class LocalFileHolder(val file: File) : ContentHolder() {
     }
 
     override suspend fun getContentCount(): ContentCount {
-        if (fileCount == 0 && folderCount == 0) {
-            file.listFiles()?.let { list ->
-                list.forEach {
-                    if (it.isFile) fileCount++ else folderCount++
-                }
-            }
-        }
-
+        if (fileCount == 0 && folderCount == 0) listContent()
         return ContentCount(fileCount, folderCount)
     }
 

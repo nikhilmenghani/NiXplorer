@@ -400,39 +400,7 @@ fun CodeEditor.moveSelectionBy(step: Int, controlledCursor: Int) {
 
 fun File.listFilesAndEmptyDirs(): List<File> {
     val result = mutableListOf<File>()
-
-    // A queue of directories to visit. Start with the root.
-    val directoryQueue = ArrayDeque<File>()
-    if (isDirectory) {
-        directoryQueue.add(this)
-    } else if (isFile) {
-        // If the starting path is just a file, add it and return.
-        result.add(this)
-        return result
-    } else {
-        // Not a valid file or directory, return an empty list.
-        return emptyList()
-    }
-
-    while (directoryQueue.isNotEmpty()) {
-        val dir = directoryQueue.removeFirst()
-        // listFiles() can be null if the directory is not accessible
-        val children = dir.listFiles() ?: continue
-
-        if (children.isEmpty()) {
-            // This directory is empty, add it to the list.
-            result.add(dir)
-        } else {
-            // Process the contents of the non-empty directory
-            for (child in children) {
-                if (child.isFile) {
-                    result.add(child)
-                } else if (child.isDirectory) {
-                    directoryQueue.add(child)
-                }
-            }
-        }
-    }
+    com.nixplorer.screen.main.tab.files.task.SafeFileOperations.walk(this) { result.add(it) }
     return result
 }
 

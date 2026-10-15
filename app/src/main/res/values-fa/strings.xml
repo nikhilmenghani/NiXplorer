@@ -379,7 +379,7 @@
     <string name="ignore_case">نادیده گرفتن حروف کوچک و بزرگ</string>
     <string name="by_extension">بر اساس پسوند</string>
     <string name="in_content">در محتوا</string>
-    <string name="max_results">حداکثر نتایج: %1$d</string>
+    <string name="max_results">حداکثر نتایج: %1$s</string>
     <string name="searching">در حال جستجو…</string>
     <string name="search_results">نتایج (%1$d)</string>
     <string name="expand">گسترش</string>

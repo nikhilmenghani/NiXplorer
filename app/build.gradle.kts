@@ -44,6 +44,7 @@ android {
         applicationId = "com.nixplorer"
         minSdk = 26
         targetSdk = 36
+        testInstrumentationRunner = "com.nixplorer.safety.OperationSafetyInstrumentation"
         versionCode = stableVersion.code
         versionName = stableVersion.name
         manifestPlaceholders["appLabel"] = "@string/app_name"

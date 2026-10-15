@@ -87,7 +87,12 @@ fun ColumnScope.FilesList(tab: FilesTab) {
 
     Box(Modifier.weight(1f)) {
         if (tab.activeFolderContent.isEmpty() && !tab.isLoading) {
-            EmptyFolderContent(tab)
+            if (tab.folderReadError != null) {
+                Column(Modifier.fillMaxSize().padding(24.dp), verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text(tab.folderReadError!!, color = colorScheme.error, textAlign = TextAlign.Center)
+                    androidx.compose.material3.TextButton(onClick = { tab.reloadFiles() }) { Text("Retry") }
+                }
+            } else EmptyFolderContent(tab)
         }
 
         if (preferencesManager.disablePullDownToRefresh) {

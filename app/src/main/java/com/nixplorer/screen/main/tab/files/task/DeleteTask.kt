@@ -10,17 +10,13 @@ import com.nixplorer.screen.main.tab.files.holder.LocalFileHolder
 import com.nixplorer.screen.main.tab.files.holder.ZipFileHolder
 import com.nixplorer.screen.main.tab.files.misc.FileMimeType.apkFileType
 import com.reandroid.archive.ZipAlign
-import java.io.File
-import java.io.FileOutputStream
-import java.util.zip.ZipEntry
-import java.util.zip.ZipFile
-import java.util.zip.ZipOutputStream
 
 class DeleteTask(
     val sourceContent: List<ContentHolder>
 ) : Task() {
     private var parameters: DeleteTaskParameters? = null
     private var pendingContent = arrayListOf<DeleteContentItem>()
+    private val preparedEntries = linkedMapOf<String, OperationItemRecord>()
 
     override val metadata = System.currentTimeMillis().toFormattedDate().let { time ->
         TaskMetadata(
@@ -47,13 +43,19 @@ class DeleteTask(
         taskTitle = metadata.title,
     )
 
+    override fun recoveryRecord() = OperationRecord(id, metadata.title, "delete",
+        sourceContent.map { if (it is ZipFileHolder) it.zipTree.source.uniquePath + "!/" + it.node.path else it.uniquePath },
+        null, getCurrentStatus().name, progressMonitor.summary,
+        pendingContent.map { OperationItemRecord(it.source.uniquePath, "", it.status.name, null, false,
+            it.status == TaskContentStatus.SUCCESS, null) } + preparedEntries.values)
+
     override fun getCurrentStatus() = progressMonitor.status
 
     override suspend fun validate() = sourceContent.find { !it.isValid() } == null
 
     private fun markAsFailed(info: String) {
         progressMonitor.apply {
-            status = TaskStatus.FAILED
+            status = if (preparedEntries.values.any { it.sourceDeleted }) TaskStatus.PARTIAL_FAILURE else TaskStatus.FAILED
             summary = info
             progress = 0f
         }
@@ -61,7 +63,7 @@ class DeleteTask(
 
     private fun markAsAborted() {
         progressMonitor.apply {
-            status = TaskStatus.PAUSED
+            status = TaskStatus.CANCELLED
             summary = globalClass.getString(R.string.task_aborted)
         }
     }
@@ -136,7 +138,7 @@ class DeleteTask(
                 }
 
                 try {
-                    ZipAlign.alignApk(sampleContent.zipTree.source.file)
+                    com.nixplorer.screen.main.tab.files.zip.ArchiveEdits.update(sampleContent.zipTree.source.file, { aborted }, id) { ZipAlign.alignApk(it) }
                 } catch (e: Exception) {
                     // Don't fail the entire task for alignment issues
                     logger.logError(e)
@@ -174,11 +176,22 @@ class DeleteTask(
 
                 try {
                     val localFile = itemToDelete.source as LocalFileHolder
-                    if (localFile.file.deleteRecursively()) {
-                        itemToDelete.status = TaskContentStatus.SUCCESS
-                    } else {
-                        throw Exception(globalClass.getString(R.string.failed_to_delete_file))
+                    SafeFileOperations.deleteTree(localFile.file, id, { aborted }, onPrepared = { path, retained ->
+                        val record = OperationItemRecord(path, retained, "DELETE_PREPARED", null, false, false, null)
+                        preparedEntries[path] = record
+                        globalClass.taskManager.journal.saveItem(id, record)
+                    }) { path ->
+                        progressMonitor.contentName = java.io.File(path).name
+                        val record = preparedEntries.getValue(path).copy(status = "SUCCESS", sourceDeleted = true)
+                        preparedEntries[path] = record
+                        globalClass.taskManager.journal.saveItem(id, record)
                     }
+                    itemToDelete.status = TaskContentStatus.SUCCESS
+                    checkpoint()
+                } catch (e: java.util.concurrent.CancellationException) {
+                    progressMonitor.status = TaskStatus.CANCELLED
+                    progressMonitor.summary = "Deletion cancelled. Some entries may already be deleted; remaining content was retained. Review before retrying."
+                    return
                 } catch (e: Exception) {
                     logger.logError(e)
                     markAsFailed(
@@ -194,157 +207,32 @@ class DeleteTask(
     }
 
     private suspend fun handleZipFileDeletion() {
-        val zipFileHolder = sourceContent.first() as ZipFileHolder
-        val sourceZipFile = zipFileHolder.zipTree.source.file
-        var tempFile: File? = null
-
+        val holder = sourceContent.first() as ZipFileHolder
         try {
-            // Check abortion before processing
-            if (aborted) {
-                markAsAborted()
-                return
-            }
-
-            progressMonitor.apply {
-                processName = globalClass.getString(R.string.updating)
-                progress = 0.15f
-            }
-
-            // Create temp file for safe operations
-            tempFile = File(sourceZipFile.parent, "${sourceZipFile.nameWithoutExtension}_temp.zip")
-
-            // Create a set of paths to delete
-            val pathsToDelete = mutableSetOf<String>()
-            val foldersToDelete = mutableSetOf<String>()
-
-            pendingContent.filter { it.status == TaskContentStatus.PENDING }.forEach { item ->
-                val zipHolder = item.source as ZipFileHolder
-                val pathToDelete = zipHolder.uniquePath
-                pathsToDelete.add(pathToDelete)
-
-                if (zipHolder.isFolder) {
-                    foldersToDelete.add(pathToDelete)
-                }
-            }
-
-            progressMonitor.apply {
-                progress = 0.2f
-            }
-
-            // Process the zip file
-            ZipFile(sourceZipFile).use { sourceZip ->
-                ZipOutputStream(FileOutputStream(tempFile)).use { zipOut ->
-                    val entries = sourceZip.entries().toList()
-                    var processedCount = 0
-
-                    entries.forEach { entry ->
-                        if (aborted) {
-                            markAsAborted()
-                            return
-                        }
-
-                        val entryPath = entry.name.removeSuffix("/")
-                        var shouldDelete = false
-
-                        // Check if this entry should be deleted
-                        if (pathsToDelete.contains(entryPath)) {
-                            shouldDelete = true
-                        } else {
-                            // Check if this entry is inside a folder being deleted
-                            for (folderPath in foldersToDelete) {
-                                if (entryPath.startsWith("$folderPath/")) {
-                                    shouldDelete = true
-                                    break
-                                }
-                            }
-                        }
-
-                        if (!shouldDelete) {
-                            // Copy the entry to the new zip
-                            val newEntry = ZipEntry(entry.name).apply {
-                                time = entry.time
-                                if (!entry.isDirectory) {
-                                    method = entry.method
-                                    if (entry.method == ZipEntry.STORED) {
-                                        size = entry.size
-                                        crc = entry.crc
-                                    }
-                                }
-                            }
-
-                            zipOut.putNextEntry(newEntry)
-
-                            if (!entry.isDirectory) {
-                                sourceZip.getInputStream(entry).use { inputStream ->
-                                    inputStream.copyTo(zipOut)
-                                }
-                            }
-
-                            zipOut.closeEntry()
-                        } else {
-                            // Mark corresponding pending items as successful
-                            pendingContent.find {
-                                (it.source as ZipFileHolder).uniquePath == entryPath
-                            }?.status = TaskContentStatus.SUCCESS
-                        }
-
-                        processedCount++
-                        val progressPercent =
-                            0.2f + (0.7f * (processedCount.toFloat() / entries.size))
-
-                        progressMonitor.apply {
-                            contentName = entry.name
-                            progress = progressPercent
-                        }
+            val selected = pendingContent.filter { it.status == TaskContentStatus.PENDING }
+            require(selected.all { (it.source as ZipFileHolder).zipTree.source.uniquePath == holder.zipTree.source.uniquePath }) { "Select entries from one archive at a time" }
+            val paths = selected.map { (it.source as ZipFileHolder).node.path }
+            com.nixplorer.screen.main.tab.files.zip.ArchiveEdits.update(holder.zipTree.source.file, { aborted }, id) { stage ->
+                net.lingala.zip4j.ZipFile(stage).use { zip ->
+                    val removals = zip.fileHeaders.map { it.fileName }.filter { path ->
+                        paths.any { selectedPath -> path.trimEnd('/') == selectedPath || path.startsWith("$selectedPath/") }
                     }
+                    if (removals.isNotEmpty()) zip.removeFiles(removals)
                 }
             }
-
-            // Check abortion before finalizing
-            if (aborted) {
-                markAsAborted()
-                return
-            }
-
-            progressMonitor.apply {
-                progress = 0.9f
-                processName = globalClass.getString(R.string.finalizing)
-            }
-
-            // Replace the original file with the modified one
-            if (!sourceZipFile.delete()) {
-                throw Exception(globalClass.getString(R.string.failed_to_delete_original_zip_file))
-            }
-
-            if (!tempFile.renameTo(sourceZipFile)) {
-                throw Exception(globalClass.getString(R.string.failed_to_replace_original_zip_file))
-            }
-
-            tempFile = null // Successfully renamed, don't delete in finally
-
-            // Mark any remaining pending items as successful (for virtual folders)
-            pendingContent.filter { it.status == TaskContentStatus.PENDING }.forEach { item ->
-                val zipHolder = item.source as ZipFileHolder
-                if (zipHolder.isFolder) {
-                    item.status = TaskContentStatus.SUCCESS
-                }
-            }
-
+            selected.forEach { it.status = TaskContentStatus.SUCCESS }
+            holder.zipTree.reset()
+        } catch (e: java.util.concurrent.CancellationException) {
+            progressMonitor.status = TaskStatus.CANCELLED
+            progressMonitor.summary = "Cancelled; original archive retained"
         } catch (e: Exception) {
             logger.logError(e)
-            markAsFailed(
-                globalClass.resources.getString(
-                    R.string.task_summary_failed,
-                    e.message ?: emptyString
-                )
-            )
-        } finally {
-            // Clean up temp file if it still exists
-            tempFile?.delete()
+            markAsFailed("Archive was not deleted: ${e.message}")
         }
     }
 
     override suspend fun continueTask() {
+        aborted = false
         if (parameters == null) {
             markAsFailed(globalClass.getString(R.string.unable_to_continue_task))
             return

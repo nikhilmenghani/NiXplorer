@@ -39,6 +39,9 @@ class CompressTask(
         taskTitle = metadata.title,
     )
 
+    override fun recoveryRecord() = OperationRecord(id, metadata.title, "compress", sourceContent.map { it.uniquePath },
+        parameters?.destPath, getCurrentStatus().name, progressMonitor.summary)
+
     override fun getCurrentStatus() = progressMonitor.status
 
     override suspend fun validate() = sourceContent.find { !it.isValid() } == null
@@ -53,7 +56,7 @@ class CompressTask(
 
     private fun markAsAborted() {
         progressMonitor.apply {
-            status = TaskStatus.PAUSED
+            status = TaskStatus.CANCELLED
             summary = globalClass.getString(R.string.task_aborted)
         }
     }
@@ -87,6 +90,12 @@ class CompressTask(
             progress = 0.05f
         }
 
+        val destination = File(requireNotNull(parameters).destPath)
+        if (sourceContent.map { it.displayName }.distinct().size != sourceContent.size || destination.exists() || sourceContent.any { it !is com.nixplorer.screen.main.tab.files.holder.LocalFileHolder ||
+            (it.isFolder && destination.canonicalFile.toPath().startsWith(File(it.uniquePath).canonicalFile.toPath())) || File(it.uniquePath).canonicalFile == destination.canonicalFile }) {
+            markAsFailed("Choose a new archive outside the source folders. Existing archives and unsupported providers cannot be compressed in place.")
+            return
+        }
         val basePath = sourceContent[0].getParent()?.uniquePath ?: emptyString
 
         if (pendingContent.isEmpty()) {
@@ -107,6 +116,7 @@ class CompressTask(
             progress = 0.1f
         }
 
+        var stage: File? = null
         try {
             // Check abortion before starting compression
             if (aborted) {
@@ -114,7 +124,11 @@ class CompressTask(
                 return
             }
 
-            ZipFile(parameters?.destPath).use { zipOut ->
+            SafeFileOperations.directory(destination.parentFile!!)
+            stage = File.createTempFile(".nix-compress-$id-", ".zip", destination.parentFile)
+            java.util.zip.ZipOutputStream(stage.outputStream()).use { }
+            pendingContent.forEach { it.status = TaskContentStatus.PENDING }
+            ZipFile(stage).use { zipOut ->
                 pendingContent.forEachIndexed { index, itemToCompress ->
                     if (aborted) {
                         markAsAborted()
@@ -137,7 +151,7 @@ class CompressTask(
                             } else {
                                 addFileToZip(zipOut, itemToCompress.content)
                             }
-                            itemToCompress.status = TaskContentStatus.SUCCESS
+                            // Commit item success only after the validated archive is published.
                         } catch (e: Exception) {
                             logger.logError(e)
                             markAsFailed(
@@ -151,6 +165,13 @@ class CompressTask(
                     }
                 }
             }
+            com.nixplorer.screen.main.tab.files.zip.ArchiveSafety.validate(stage, readData = true, cancelled = { aborted })
+            SafeFileOperations.checkCancelled { aborted }
+            SafeFileOperations.replace(stage, destination, overwrite = false)
+            pendingContent.forEach { it.status = TaskContentStatus.SUCCESS }
+        } catch (e: java.util.concurrent.CancellationException) {
+            progressMonitor.status = TaskStatus.CANCELLED
+            progressMonitor.summary = "Cancelled; original archive retained"
         } catch (e: Exception) {
             logger.logError(e)
             markAsFailed(
@@ -160,7 +181,7 @@ class CompressTask(
                 )
             )
             return
-        }
+        } finally { stage?.delete() }
 
         if (progressMonitor.status == TaskStatus.RUNNING) {
             progressMonitor.apply {

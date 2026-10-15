@@ -109,6 +109,7 @@ class FilesTab(
     var tabViewLabel by mutableStateOf(createTabLabel())
 
     var isLoading by mutableStateOf(false)
+    var folderReadError by mutableStateOf<String?>(null)
 
     private var foldersCount = 0
     private var filesCount = 0
@@ -455,7 +456,8 @@ class FilesTab(
                 val changedFiles = zipTree.checkExtractedFiles()
                 if (changedFiles.isNotEmpty()) {
                     isLoading = true
-                    ZipFile(zipTree.source.file).use { zipFile ->
+                    com.nixplorer.screen.main.tab.files.zip.ArchiveEdits.update(zipTree.source.file) { stage ->
+                    ZipFile(stage).use { zipFile ->
                         changedFiles.forEach { changedFile ->
                             zipTree.getRelatedNode(changedFile)?.let { node ->
                                 zipFile.addFile(
@@ -469,9 +471,10 @@ class FilesTab(
                             changedFile.resetCachedTimestamp()
                         }
                     }
+                    }
                     if (zipTree.source.extension == apkFileType) {
                         try {
-                            ZipAlign.alignApk(zipTree.source.file)
+                            com.nixplorer.screen.main.tab.files.zip.ArchiveEdits.update(zipTree.source.file) { ZipAlign.alignApk(it) }
                         } catch (e: Exception) {
                             logger.logError(e)
                         }
@@ -564,17 +567,22 @@ class FilesTab(
     private suspend fun listFiles(onReady: (ArrayList<out ContentHolder>) -> Unit) {
         isLoading = true
 
-        val result = activeFolder.listSortedContent()
-
-        activeFolder.getContentCount().let { contentCount ->
-            foldersCount = contentCount.folders
-            filesCount = contentCount.files
-        }
-
-        withContext(Dispatchers.Main) {
-            onReady(result)
-            isLoading = false
-        }
+        try {
+            val result = withContext(Dispatchers.IO) { activeFolder.listSortedContent() }
+            activeFolder.getContentCount().let { count -> foldersCount = count.folders; filesCount = count.files }
+            withContext(Dispatchers.Main) {
+                folderReadError = null
+                onReady(result)
+            }
+        } catch (e: kotlinx.coroutines.CancellationException) { throw e }
+        catch (e: Exception) {
+            logger.logError(e)
+            withContext(Dispatchers.Main) {
+                folderReadError = e.message ?: "Unable to read folder. Check access and storage connection."
+                activeFolderContent.clear()
+                globalClass.showMsg(folderReadError!!)
+            }
+        } finally { withContext(kotlinx.coroutines.NonCancellable + Dispatchers.Main) { isLoading = false } }
     }
 
     // Called when a new file/folder is created

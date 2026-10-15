@@ -4,6 +4,8 @@ enum class TaskStatus {
     PENDING,
     RUNNING,
     SUCCESS,
+    PARTIAL_FAILURE,
+    CANCELLED,
     FAILED,
     PAUSED,
     CONFLICT

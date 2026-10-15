@@ -48,6 +48,10 @@ class RenameTask(val sourceContent: List<ContentHolder>) : Task() {
         taskTitle = metadata.title,
     )
 
+    override fun recoveryRecord() = OperationRecord(id, metadata.title, "rename",
+        sourceContent.map { if (it is ZipFileHolder) it.zipTree.source.uniquePath + "!/" + it.node.path else it.uniquePath },
+        parameters?.newName, getCurrentStatus().name, progressMonitor.summary)
+
     override fun getCurrentStatus() = progressMonitor.status
 
     override suspend fun validate() = sourceContent.find { !it.isValid() } == null
@@ -62,7 +66,7 @@ class RenameTask(val sourceContent: List<ContentHolder>) : Task() {
 
     private fun markAsAborted() {
         progressMonitor.apply {
-            status = TaskStatus.PAUSED
+            status = TaskStatus.CANCELLED
             summary = globalClass.getString(R.string.task_aborted)
         }
     }
@@ -96,6 +100,9 @@ class RenameTask(val sourceContent: List<ContentHolder>) : Task() {
             if (parameters!!.toFind.isNotEmpty() && parameters!!.useRegex) {
                 parameters!!.toFind.toRegex()
             }
+        } catch (e: java.util.concurrent.CancellationException) {
+            progressMonitor.status = TaskStatus.CANCELLED
+            progressMonitor.summary = "Cancelled; original archive retained"
         } catch (e: Exception) {
             logger.logError(e)
             markAsFailed(
@@ -161,7 +168,7 @@ class RenameTask(val sourceContent: List<ContentHolder>) : Task() {
                 }
 
                 try {
-                    ZipAlign.alignApk(sampleContent.zipTree.source.file)
+                    com.nixplorer.screen.main.tab.files.zip.ArchiveEdits.update(sampleContent.zipTree.source.file, { aborted }, id) { ZipAlign.alignApk(it) }
                 } catch (e: Exception) {
                     logger.logError(e)
                     // Don't fail the entire task for alignment issues
@@ -219,7 +226,7 @@ class RenameTask(val sourceContent: List<ContentHolder>) : Task() {
         }
     }
 
-    private suspend fun handleZipFileRenaming() {
+    private fun handleZipFileRenaming() = com.nixplorer.screen.main.tab.files.zip.ArchiveEdits.coordinated {
         val zipFileHolder = sourceContent.first() as ZipFileHolder
         val sourceZipFile = zipFileHolder.zipTree.source.file
         var tempFile: File? = null
@@ -228,15 +235,17 @@ class RenameTask(val sourceContent: List<ContentHolder>) : Task() {
             // Check abortion before processing
             if (aborted) {
                 markAsAborted()
-                return
+                return@coordinated
             }
 
             progressMonitor.apply {
                 progress = 0.15f
             }
 
+            val originalIdentity = SafeFileOperations.identity(sourceZipFile, { aborted })
             // Create temp file for safe operations
-            tempFile = File(sourceZipFile.parent, "${sourceZipFile.nameWithoutExtension}_temp.zip")
+            com.nixplorer.screen.main.tab.files.zip.ArchiveSafety.validate(sourceZipFile)
+            tempFile = File.createTempFile(".nix-rename-$id-", ".zip", sourceZipFile.parentFile)
 
             // Create a map of old paths to new paths for all items to rename
             val renameMap = mutableMapOf<String, String>()
@@ -268,7 +277,7 @@ class RenameTask(val sourceContent: List<ContentHolder>) : Task() {
                     entries.forEach { entry ->
                         if (aborted) {
                             markAsAborted()
-                            return
+                            return@coordinated
                         }
 
                         val entryName = entry.name.removeSuffix("/")
@@ -321,9 +330,7 @@ class RenameTask(val sourceContent: List<ContentHolder>) : Task() {
 
                         // Mark corresponding pending items as successful
                         if (wasRenamed) {
-                            pendingContent.find {
-                                (it.source as ZipFileHolder).uniquePath == entryName
-                            }?.status = TaskContentStatus.SUCCESS
+                            // Status is committed only after the validated replacement is published.
                         }
 
                         processedCount++
@@ -341,7 +348,7 @@ class RenameTask(val sourceContent: List<ContentHolder>) : Task() {
             // Check abortion before finalizing
             if (aborted) {
                 markAsAborted()
-                return
+                return@coordinated
             }
 
             progressMonitor.apply {
@@ -349,14 +356,10 @@ class RenameTask(val sourceContent: List<ContentHolder>) : Task() {
                 processName = globalClass.getString(R.string.finalizing)
             }
 
-            // Replace the original file with the new one
-            if (!sourceZipFile.delete()) {
-                throw Exception(globalClass.getString(R.string.failed_to_delete_original_zip_file))
-            }
-
-            if (!tempFile.renameTo(sourceZipFile)) {
-                throw Exception(globalClass.getString(R.string.failed_to_replace_original_zip_file))
-            }
+            com.nixplorer.screen.main.tab.files.zip.ArchiveSafety.validate(tempFile!!, readData = true, cancelled = { aborted })
+            require(SafeFileOperations.identity(sourceZipFile, { aborted }) == originalIdentity) { "Archive changed during rename; original retained" }
+            com.nixplorer.screen.main.tab.files.task.SafeFileOperations.replace(tempFile!!, sourceZipFile)
+            pendingContent.forEach { it.status = TaskContentStatus.SUCCESS }
 
             tempFile = null // Successfully renamed, don't delete in finally
 
@@ -376,6 +379,9 @@ class RenameTask(val sourceContent: List<ContentHolder>) : Task() {
                 }
             }
 
+        } catch (e: java.util.concurrent.CancellationException) {
+            progressMonitor.status = TaskStatus.CANCELLED
+            progressMonitor.summary = "Cancelled; original archive retained"
         } catch (e: Exception) {
             logger.logError(e)
             markAsFailed(
@@ -386,7 +392,7 @@ class RenameTask(val sourceContent: List<ContentHolder>) : Task() {
             )
         } finally {
             // Clean up temp file if it still exists
-            tempFile?.delete()
+            if (aborted) tempFile?.delete()
         }
     }
 

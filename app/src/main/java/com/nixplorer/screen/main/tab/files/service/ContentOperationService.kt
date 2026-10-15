@@ -18,6 +18,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.withLock
 import java.util.concurrent.ConcurrentHashMap
 
 class ContentOperationService : Service() {
@@ -89,7 +90,8 @@ class ContentOperationService : Service() {
                 }
             }
         }
-        return START_STICKY
+        if (intent == null && runningTaskIds.isEmpty()) stopSelf()
+        return START_NOT_STICKY
     }
 
     private fun removeTask(taskId: String) {
@@ -99,6 +101,7 @@ class ContentOperationService : Service() {
             } else {
                 runningTaskIds.remove(taskId)
                 updateNotification()
+
 
                 // Stop service if no more tasks
                 if (runningTaskIds.isEmpty()) {
@@ -116,20 +119,34 @@ class ContentOperationService : Service() {
         val task = globalClass.taskManager.getTask(taskId)
 
         if (task == null) {
+            if (runningTaskIds.isEmpty()) stopSelf()
             return
         }
+        if (!globalClass.taskManager.claimDispatch(taskId)) return
 
         runningTaskIds[taskId] = true
         updateNotification()
 
         serviceScope.launch {
             try {
-                task.run()
+                globalClass.taskManager.executionMutex.withLock {
+                    task.checkpoint()
+                    if (task.getCurrentStatus() == TaskStatus.PENDING) task.run() else task.continueTask()
+                    task.checkpoint()
+                }
                 globalClass.taskManager.handleTaskStatusChange(task, task.getCurrentStatus())
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                task.progressMonitor.status = TaskStatus.CANCELLED
+                task.progressMonitor.summary = "Interrupted; review retained sources and destination before retrying"
+                task.checkpoint()
+                globalClass.taskManager.handleTaskStatusChange(task, TaskStatus.CANCELLED)
             } catch (e: Exception) {
+                task.progressMonitor.status = TaskStatus.FAILED
+                task.progressMonitor.summary = e.message ?: "Operation failed"
                 logger.logError(e)
                 globalClass.taskManager.handleTaskStatusChange(task, TaskStatus.FAILED)
             } finally {
+                globalClass.taskManager.releaseDispatch(taskId)
                 globalClass.mainActivityManager.resumeActiveTab()
                 if (task.getCurrentStatus() == TaskStatus.SUCCESS) {
                     runningTaskIds.remove(taskId)
@@ -139,6 +156,11 @@ class ContentOperationService : Service() {
                 }
 
                 updateNotification()
+                getSystemService(NotificationManager::class.java).notify(taskId.hashCode(),
+                    NotificationCompat.Builder(this@ContentOperationService, CHANNEL_ID)
+                        .setSmallIcon(R.mipmap.ic_launcher).setContentTitle(task.metadata.title + ": " + task.getCurrentStatus().name.replace('_', ' '))
+                        .setContentText(task.progressMonitor.summary.take(160)).setStyle(NotificationCompat.BigTextStyle().bigText(task.progressMonitor.summary.take(2000)))
+                        .setAutoCancel(true).build())
 
                 // Stop service if no more tasks
                 if (runningTaskIds.isEmpty()) {
@@ -146,6 +168,11 @@ class ContentOperationService : Service() {
                 }
             }
         }
+    }
+
+    override fun onTimeout(startId: Int, fgsType: Int) {
+        runningTaskIds.keys.forEach { id -> globalClass.taskManager.getTask(id)?.abortTask() }
+        stopSelf() // Existing checkpoints reconcile interrupted work; Android's data-sync timeout must not crash the app.
     }
 
     override fun onDestroy() {
@@ -174,7 +201,7 @@ class ContentOperationService : Service() {
                 action = ACTION_START_TASK
                 putExtra(TASK_ID, taskId)
             }
-            context.startService(intent)
+            androidx.core.content.ContextCompat.startForegroundService(context, intent)
         }
 
         fun removeBackgroundTask(context: Context, taskId: String) {
@@ -182,7 +209,7 @@ class ContentOperationService : Service() {
                 action = ACTION_REMOVE_TASK
                 putExtra(TASK_ID, taskId)
             }
-            context.startService(intent)
+            androidx.core.content.ContextCompat.startForegroundService(context, intent)
         }
     }
 }

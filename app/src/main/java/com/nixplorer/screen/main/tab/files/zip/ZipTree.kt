@@ -55,7 +55,7 @@ class ZipTree(
         )
 
     fun getExtractionDestinationFile(node: ZipNode): LocalFileHolder? {
-        val file = File(createExtractionDestinationDirFor(node), node.name)
+        val file = com.nixplorer.screen.main.tab.files.task.SafeFileOperations.contained(cleanOnExitDir.file, node.path)
 
         if (!file.exists()) return null
 
@@ -82,15 +82,20 @@ class ZipTree(
         zipEntries.clear()
 
         try {
-            val zipFile = ZipFile(source.file)
-            val enum: Enumeration<*> = zipFile.entries()
-            while (enum.hasMoreElements()) {
-                val entry = enum.nextElement() as ZipEntry
-                zipEntries.put(entry.name, entry)
+            ArchiveSafety.validate(source.file)
+            ZipFile(source.file).use { zipFile ->
+                val entries = zipFile.entries()
+                while (entries.hasMoreElements()) {
+                    val entry = entries.nextElement()
+                    zipEntries[entry.name] = entry
+                }
             }
         } catch (e: Exception) {
+            zipEntries.clear()
+            nodes.clear()
+            root.children.clear()
             logger.logError(e)
-            globalClass.showMsg(R.string.invalid_zip)
+            throw java.io.IOException("Cannot open archive: ${e.message}", e)
         }
 
         buildTree()
@@ -105,7 +110,7 @@ class ZipTree(
         zipEntries.forEach { entry ->
             val path = entry.key
 
-            val parts = path.split(File.separator)
+            val parts = path.split("/")
             var currentNode = root
             var currentPath = root.path
 

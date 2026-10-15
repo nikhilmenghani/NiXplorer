@@ -1,0 +1,253 @@
+NiXplorer operation safety review
+Date: October 14, 2026 (America/Toronto)
+Reviewed revision: bbf534ef9c70f74b053adfbfcca0998e3e4675b5
+Changes: uncommitted. No commit, push, or publication performed.
+Unrelated README.md and .idea changes were preserved.
+
+Status and evidence
+
+The reported defects were confirmed by reviewing the current source. The old
+revision was not run destructively against user files. New regression fixtures
+exercise the hazardous conditions and verify the changed implementations.
+Build and unit/device checks pass. Full lint still fails because of existing
+missing translations. Full SAF operation parity and automatic destructive-task
+resume are not implemented. This is not a claim that every storage scenario is
+fixed or verified.
+
+1. Secure ZIP extraction
+
+Previously, unvalidated ZIP names became browser nodes and were joined directly
+to destination paths. Extraction opened destination streams without containment
+checks or limits. This was source-confirmed.
+
+ArchiveSafety now validates entry paths before building a ZIP tree, rejects
+absolute/traversal paths, duplicate canonical names, conflicting file/directory
+names, Unix symlinks, excessive metadata and suspicious compression ratios.
+ZIP validation closes its readers and reports an error rather than exposing a
+partially built tree. Converted and decrypted archives use the same path/conflict
+checks and output limits; their final ZIP is validated.
+
+Normal extraction and preview extraction now use stagedStream. It checks
+canonical containment and uses SecureDirectoryStream handles with no-follow
+opens and descriptor-relative publication. Swapping a destination parent for a
+symlink during writing cannot redirect the bytes. Unsupported filesystems fail
+with an explicit error instead of using a racy path-based fallback. Existing
+destinations remain intact until the complete staged file is published.
+
+Limits: 100,000 entries/tree nodes, 256 path components, 4,096 path characters,
+8 GiB per extracted entry, 32 GiB total output, compression ratio 1,000 above
+1 MiB, and a bounded archive path-metadata budget. RAR dictionary and 7z decoder
+memory limits are 128 MiB. Legitimate archives above these limits are rejected.
+
+Coverage: ordinary/encrypted ZIP traversal, converted 7z traversal, duplicate
+headers, conflicting paths, Unix symlink headers, CRC corruption, compression
+ratio, stream limits, static destination symlinks, and a live parent-symlink swap.
+The Windows symlink test is skipped because the host lacks symlink privilege;
+both symlink scenarios pass on Android.
+
+2. Safe ZIP edits
+
+Previously, DeleteTask deleted the original archive before publishing its
+replacement and used a predictable sibling name. RenameTask had the same unsafe
+replacement pattern. This was source-confirmed.
+
+ArchiveEdits uses exclusively created staging files, validates completed data
+and CRCs, checks whether the original changed, and publishes a synced replacement.
+Publication uses atomic replacement where available. The fallback writes a synced
+replacement intent, preserves a unique backup, and restores it on failure. Failed
+restoration retains recovery material. Startup reconciliation can restore a missing
+original from a verified backup without replaying deletion.
+
+ZIP delete/add/create/preview-edit and alignment paths use the staged edit helper.
+ZIP rename uses unique staging, validation and safe publication. Compression
+creates a staged new archive; an existing destination, overlapping source folder,
+unsupported holder or duplicate selected basename is rejected.
+
+Coverage: predictable sibling preservation, malformed completed archives,
+cancellation, failed publication, failed restoration, a constructed interruption
+between renames, concurrent archive edits, and actual ZIP DeleteTask/RenameTask
+and CompressTask runs on Android.
+
+3. Copy outcomes and retry
+
+Previously, item failures were swallowed, mkdir results were ignored, failed
+items were skipped on continuation, and the overall result could be SUCCESS.
+This was source-confirmed.
+
+Task state now distinguishes SUCCESS, PARTIAL_FAILURE, FAILED and CANCELLED.
+CopyTask reports per-file errors and actionable summaries. Directory creation
+must actually produce a directory. Explicit retry resets failed items, preserves
+completed copies, and retries source cleanup without repeating a completed write.
+Incomplete enumeration is discarded and enumerated again before any writes.
+Task-panel details and notifications expose outcomes and errors.
+
+Coverage: mixed outcomes, all-failure/success/cancellation classification, failed
+directory creation, a retry after a missing source appears, preservation of a
+successful destination edited before retry, and partial archive-move outcomes.
+
+4. Replacement and move protection
+
+Previously, copy could truncate a replacement target, atomic moves could be
+followed by deleting a recreated source, and recursive cleanup could remove
+unverified paths. Only the first selected source was checked for same-path issues.
+This was source-confirmed.
+
+Local writes are staged. Local moves deliberately use verified copy-then-delete
+rather than the old atomic-move shortcut. Source identity/content and destination
+content are verified. Source cleanup renames to a unique retained name, verifies
+that inode before unlinking, and restores/retains it on failure. A newly recreated
+source at the original path is not removed by a later successful-item cleanup.
+Empty directory cleanup verifies identity and refuses new contents. Every source
+is checked for same-path, descendant and overlapping operations. Type changes
+between attempts are rejected.
+
+Moves into/out of ZIPs currently copy but retain their sources, explicitly return
+PARTIAL_FAILURE and require review/manual source deletion. This safe limitation
+replaces unverified archive-source deletion; it is not complete ZIP-move support.
+
+Coverage: partial write/ENOSPC injection, cancellation, verified file/folder moves,
+changed destinations, recreated source races, recreation after move completion,
+new files arriving in an empty source directory, and path-overlap checks.
+
+5. Durable recovery, conflicts and coordination
+
+Previously, task and item state were memory-only, a sticky service could restart
+without its task, and one shared conflict slot could overwrite another decision.
+This was source-confirmed.
+
+OperationJournal syncs task descriptors and incremental item records. Records
+include sources, destinations, outcomes, copied/deleted flags, identities and
+retained deletion names. Copy/ZIP staging names include task ownership. Recovery
+reconciles exact recorded replacement targets and verified retained sources and
+lists retained partial writes for review. Recovered destructive tasks cannot be
+blindly resumed; they appear as review-required tasks. Completed checkpoints are
+removed. An incomplete last item-log append does not discard earlier evidence.
+
+The service is non-sticky, rejects duplicate dispatch, and serializes task
+execution conservatively. Recovery uses that execution lock too. Archive edits
+outside tasks have an additional shared archive-write lock. ConflictQueue keeps
+one pending decision per task, and resolving/cancelling one cannot consume another.
+Task progress monitoring cannot start competing monitors for the same dialog.
+
+Local recursive deletion is now bounded and cancellable through directory
+handles, with retained-entry names recorded before mutation. Cancellation does
+not undo deletions already confirmed and completed. Remaining entries are retained
+and the task reports cancellation/partial failure as appropriate.
+
+Coverage: journal reload and incomplete append, concurrent conflicts and archive
+edits, service background/foreground transitions with two conflict decisions,
+cancellable local deletion, and actual process stop/restart of a deliberately
+constructed interrupted replacement. The restart restored the original, retained
+the replacement and did not replay source deletion. This does not demonstrate
+every possible kill point or physical power-loss durability.
+
+6. Access errors and large folders
+
+Previously, null listFiles results could look like empty folders, recursive
+enumeration retained broad directory queues, and search swallowed access failures.
+This was source-confirmed.
+
+Local enumeration runs on IO, uses cancellable directory streams and distinguishes
+permission failures from missing/disconnected paths and other read errors. The
+browser displays an access error with Retry instead of an empty-folder message.
+Search skips links, indicates inaccessible/skipped/limited results, checks
+cancellation frequently and stops at its result limit. Cancelled older search jobs
+cannot finish by clearing a newer search's state.
+
+Enumeration/task planning is bounded by item/depth limits and an 8 Mi-character
+path-metadata budget; oversized operations fail explicitly. Copy progress advances
+with written bytes and stays short of completion while publication/verification
+is pending. Source deletion/verification is indeterminate until finished.
+
+Coverage: missing paths versus empty folders, denied directory access on Android,
+search access and result-limit warnings, 2,000-file enumeration, cancellation
+during traversal and recursive deletion, and path/depth bounds. No near-limit
+100,000-entry heap benchmark or live removable-volume disconnection was performed.
+Sorted browser lists still require a bounded materialized list; paging is deferred.
+
+7. Document-provider storage
+
+The actual holder abstraction supports LocalFileHolder, ZipFileHolder and virtual
+collections. There is no SAF tree holder or provider-backed task implementation.
+Adding full parity would require a larger browser/holder/operation redesign.
+
+DocumentProviderAccess now checks document flags and actual URI write permissions,
+rejects virtual documents for untyped archive reads, uses offered/persisted read
+grants, reports revoked access and unavailable streams, and exposes a safe rejection
+of replacement without provider guarantees. The incoming-archive flow uses these
+checks, stages the granted input, bounds its size and never modifies the provider's
+original. Unsupported task holders/destinations are rejected rather than reported
+as successful local filesystem operations.
+
+Full SAF browse/copy/move/delete/rename and cloud-provider rollback are deferred.
+Flag support is not a promise of atomic replacement. Revocation/disconnection and
+capability failures have injected unit coverage; real cloud-provider revocation,
+persisted-grant recovery, unavailable rename and partial provider writes were not
+device-tested. Provider writes are not claimed as supported.
+
+Android documentation used for capability/grant behavior:
+https://developer.android.com/training/data-storage/shared/documents-files
+https://developer.android.com/reference/android/provider/DocumentsContract.Document
+
+Final verification
+
+JDK: C:\Program Files\Java\jdk-17
+Initial daemon diagnosis: gradlew --stop, then test/build with --no-daemon.
+The reported old daemon-connection failure was not reproduced: fresh invocations
+connected successfully and reached compilation. Incremental compile/test failures
+introduced during implementation were corrected and affected checks rerun.
+
+Commands:
+  $env:JAVA_HOME='C:\Program Files\Java\jdk-17'
+  .\gradlew.bat testDebugUnitTest assembleDebug assembleDebugAndroidTest --console=plain
+  .\gradlew.bat lintDebug --console=plain
+  git -c safe.directory=D:/workspace/android/NiXplorer diff --check
+
+Unit result: 55 tests, 54 passed, 0 failures/errors, 1 Windows symlink skip.
+Debug app and instrumentation APK builds: passed.
+Diff whitespace check: passed.
+Lint: FAILED, 104 MissingTranslation errors. Their keys existed in the reviewed
+revision and no default strings or corresponding translations were removed by
+this work. Four existing format mismatches and one Compose StateFlow observation
+error were fixed. No lint baseline or suppression was added to hide failures.
+Existing SDK/D8/Kotlin toolchain warnings remain; builds and tablet runtime checks
+passed despite those warnings.
+
+Device: connected Xiaomi nabu tablet, serial 6889f3db. NiXplorer Dev and its fixture
+runner installed successfully. Samsung was not connected for this verification.
+22 Android fixture checks passed, plus the final process-stop recovery check.
+All destructive checks used disposable app-private fixtures; personal files were
+not targets. Fixture/journal cleanup was restricted to created test resources.
+
+Device commands:
+  adb -s 6889f3db install -r app/build/outputs/apk/debug/app-debug.apk
+  adb -s 6889f3db install -r app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
+  adb -s 6889f3db shell am instrument -w com.nixplorer.debug.test/com.nixplorer.safety.OperationSafetyInstrumentation
+  adb -s 6889f3db shell am instrument -w -e phase prepareRecovery com.nixplorer.debug.test/com.nixplorer.safety.OperationSafetyInstrumentation
+  [Wait for READY_FOR_PROCESS_STOP before the following command.]
+  adb -s 6889f3db shell am force-stop com.nixplorer.debug
+  adb -s 6889f3db shell am instrument -w -e phase verifyRecovery com.nixplorer.debug.test/com.nixplorer.safety.OperationSafetyInstrumentation
+
+Evidence files:
+  D:\workspace\nix-safety-final-build.log
+  D:\workspace\nix-safety-final-checks.log
+  D:\workspace\nix-safety-final-lint.log
+  D:\workspace\nix-safety-tablet-results.log
+  D:\workspace\nix-safety-process-death-results.log
+  app/build/reports/tests/testDebugUnitTest/index.html
+  app/build/reports/lint-results-debug.html
+
+Remaining risks and deferred work
+
+Full SAF mutation parity, verified ZIP-source deletion, automatic resume of
+interrupted destructive tasks and browser paging remain deferred. Recovery of
+generic APK-merge tasks is review-only rather than a reconstructed continuation.
+Staging/backup materials can consume extra storage and are deliberately retained
+when safety cannot be established. Unsupported secure-stream or stable-identity
+filesystems fail safely. Source verification adds IO; global task serialization
+prioritizes safety over maximum parallel throughput. Operations beyond the limits
+require smaller selections. Real disk exhaustion was injected rather than achieved
+by filling a device. Physical power loss, every interruption point, Android's
+long-running foreground-service timeout and adversarial concurrent writes by
+external apps were not exhaustively verified. Several error messages still use
+English fallbacks. Full lint remains red until the existing translations are added.

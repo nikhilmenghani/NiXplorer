@@ -379,7 +379,7 @@
     <string name="ignore_case">Игнорировать регистр</string>
     <string name="by_extension">По расширению</string>
     <string name="in_content">В содержимом</string>
-    <string name="max_results">Макс. результатов: %1$d</string>
+    <string name="max_results">Макс. результатов: %1$s</string>
     <string name="searching">Поиск…</string>
     <string name="search_results">Результаты (%1$d)</string>
     <string name="expand">Развернуть</string>

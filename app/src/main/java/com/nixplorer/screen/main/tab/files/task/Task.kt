@@ -23,6 +23,10 @@ abstract class Task(
         aborted = true
     }
 
+    open fun recoveryRecord() = OperationRecord(id, metadata.title, javaClass.simpleName, emptyList(), null,
+        getCurrentStatus().name, progressMonitor.summary)
+    fun checkpoint() { com.nixplorer.App.globalClass.taskManager.journal.save(recoveryRecord()) }
+
     abstract val metadata: TaskMetadata
     abstract val progressMonitor: TaskProgressMonitor
 

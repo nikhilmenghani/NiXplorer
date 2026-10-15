@@ -379,7 +379,7 @@
     <string name="ignore_case">Ignorar Maiúsculas/Minúsculas</string>
     <string name="by_extension">Por Extensão</string>
     <string name="in_content">No Conteúdo</string>
-    <string name="max_results">Resultados Máximos: %1$d</string>
+    <string name="max_results">Resultados Máximos: %1$s</string>
     <string name="searching">Pesquisando…</string>
     <string name="search_results">Resultados (%1$d)</string>
     <string name="expand">Expandir</string>

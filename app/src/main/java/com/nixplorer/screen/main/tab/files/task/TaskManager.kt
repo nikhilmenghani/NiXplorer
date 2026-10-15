@@ -14,12 +14,19 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.withLock
 import java.util.Collections
 import java.util.concurrent.ConcurrentHashMap
 
 class TaskManager {
     private val taskScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
-    private var isMonitoring = false
+    private val isMonitoring = java.util.concurrent.atomic.AtomicBoolean(false)
+
+    val journal = OperationJournal(java.io.File(globalClass.filesDir, "operation-journal"))
+    val executionMutex = kotlinx.coroutines.sync.Mutex()
+    private val dispatching = ConcurrentHashMap.newKeySet<String>()
+    fun claimDispatch(id: String) = dispatching.add(id)
+    fun releaseDispatch(id: String) { dispatching.remove(id) }
 
     private val allTasks = ConcurrentHashMap<String, Task>()
 
@@ -34,6 +41,29 @@ class TaskManager {
     @Volatile
     var runningTaskDialogInfo = RunningTaskDialogInfo()
     val taskInterceptor = TaskConflict()
+
+    init {
+        taskScope.launch {
+            executionMutex.withLock {
+            journal.load().filter { it.status != TaskStatus.SUCCESS.name }.forEach { record ->
+                val destinations = (record.items.map { it.destination } + record.sources + listOfNotNull(record.destination)).map { it.substringBefore("!/") }.filter { it.startsWith("/") }
+                val notes = destinations.distinct().flatMap { path -> runCatching { SafeFileOperations.reconcileReplacement(java.io.File(path)) }.getOrElse { listOf("Cannot reconcile $path: ${it.message}") } } +
+                    record.items.filter { "!/" !in it.source }.flatMap { item -> runCatching { SafeFileOperations.reconcileRetainedSource(java.io.File(item.source), item.identity) }.getOrElse { listOf("Source recovery needs review: ${it.message}") } }
+                val retainedStages = (record.items.map { it.destination } + record.sources + listOfNotNull(record.destination)).mapNotNull { path ->
+                    path.substringBefore("!/").takeIf { it.startsWith("/") }?.let { java.io.File(it).parentFile } }
+                    .distinct().flatMap { parent ->
+                        if (!parent.isDirectory) emptyList() else runCatching { java.nio.file.Files.newDirectoryStream(parent.toPath()) { path ->
+                            listOf(".nix-stage-", ".nix-archive-", ".nix-rename-", ".nix-compress-", ".nix-delete-").any { path.fileName.toString().startsWith(it + record.id + "-") }
+                        }.use { entries ->
+                            entries.map { "Retained partial write (review before removal): $it" }.take(SafeFileOperations.MAX_ITEMS).toList()
+                        } }.getOrElse { listOf("Cannot inspect partial writes at $parent: ${it.message}") }
+                    }
+                val recovered = RecoveredTask(record.copy(summary = record.summary + "\n" + (notes + retainedStages).joinToString("\n")))
+                if (allTasks.putIfAbsent(record.id, recovered) == null) failedTasks.add(recovered)
+            }
+            }
+        }
+    }
 
     fun addTask(
         task: Task,
@@ -52,6 +82,8 @@ class TaskManager {
     fun removeTask(id: String) {
         allTasks[id]?.abortTask()
         allTasks.remove(id)
+        taskInterceptor.remove(id)
+        taskScope.launch { journal.remove(id) }
 
         pendingTasks.removeIf { it.id == id }
         runningTasks.removeIf { it.id == id }
@@ -62,13 +94,13 @@ class TaskManager {
     }
 
     suspend fun validateTasks(onFinished: (() -> Unit)? = null) {
-        val iterator = pendingTasks.iterator()
-        while (iterator.hasNext()) {
-            val task = iterator.next()
-            if (!task.validate()) {
-                invalidTasks.add(task)
-                // Use the iterator's remove method, which is safe
-                iterator.remove()
+        kotlinx.coroutines.withContext(Dispatchers.IO) {
+            val snapshot = synchronized(pendingTasks) { pendingTasks.toList() }
+            snapshot.forEach { task ->
+                if (!task.validate()) {
+                    invalidTasks.add(task)
+                    pendingTasks.removeIf { it.id == task.id }
+                }
             }
         }
         onFinished?.invoke()
@@ -100,10 +132,13 @@ class TaskManager {
             return
         }
 
+        if (task is RecoveredTask) { showMsg(task.progressMonitor.summary); return }
         val currentStatus = task.getCurrentStatus()
 
         if (currentStatus isNot TaskStatus.CONFLICT
             && currentStatus isNot TaskStatus.FAILED
+            && currentStatus isNot TaskStatus.PARTIAL_FAILURE
+            && currentStatus isNot TaskStatus.CANCELLED
             && currentStatus isNot TaskStatus.PAUSED
         ) {
             showMsg(
@@ -115,6 +150,7 @@ class TaskManager {
             return
         }
 
+        task.aborted = false // Explicit user retry/resolution authorizes resuming; queued cancellation is otherwise preserved.
         // Move task back to running
         pausedTasks.removeIf { it.id == taskId }
         failedTasks.removeIf { it.id == taskId }
@@ -138,20 +174,23 @@ class TaskManager {
     }
 
     fun handleTaskStatusChange(task: Task, newStatus: TaskStatus) {
+        pausedTasks.removeIf { it.id == task.id }
+        failedTasks.removeIf { it.id == task.id }
         when (newStatus) {
             TaskStatus.SUCCESS -> {
                 runningTasks.removeIf { it.id == task.id }
                 completedTasks.add(task)
+                taskScope.launch { journal.remove(task.id) }
                 showMsg(R.string.task_completed)
             }
 
-            TaskStatus.FAILED -> {
+            TaskStatus.FAILED, TaskStatus.PARTIAL_FAILURE -> {
                 runningTasks.removeIf { it.id == task.id }
                 failedTasks.add(task)
                 showMsg(R.string.task_failed)
             }
 
-            TaskStatus.PAUSED -> {
+            TaskStatus.PAUSED, TaskStatus.CANCELLED -> {
                 runningTasks.removeIf { it.id == task.id }
                 pausedTasks.add(task)
                 showMsg(R.string.task_paused)
@@ -176,7 +215,7 @@ class TaskManager {
     }
 
     fun bringToForeground(task: Task) {
-        if (!isMonitoring) {
+        if (isMonitoring.compareAndSet(false, true)) {
             taskScope.launch {
                 monitorRunningTask(task)
             }
@@ -184,7 +223,6 @@ class TaskManager {
     }
 
     private suspend fun monitorRunningTask(task: Task) {
-        isMonitoring = true
         runningTaskDialogInfo.show(task)
         try {
             while (runningTaskDialogInfo.showDialog) {
@@ -196,7 +234,7 @@ class TaskManager {
                 delay(100)
             }
         } finally {
-            isMonitoring = false
+            isMonitoring.set(false)
             runningTaskDialogInfo.hide()
         }
     }
@@ -206,53 +244,43 @@ class TaskManager {
     }
 
     class TaskConflict {
-        var hasConflict by mutableStateOf(false)
-            private set
-        var message by mutableStateOf(emptyString)
-            private set
+        private val queue = ConflictQueue<Pair<TaskContentItem, Task>>()
         var taskContentItem by mutableStateOf<TaskContentItem?>(null)
             private set
         var task by mutableStateOf<Task?>(null)
             private set
+        val hasConflict get() = task != null
+        val message get() = taskContentItem?.let {
+            globalClass.resources.getString(R.string.file_already_exists, it.content.displayName)
+        } ?: emptyString
 
-        fun interceptTask(taskContentItem: TaskContentItem, task: Task) {
-            this.hasConflict = true
-            this.message = globalClass.resources.getString(
-                R.string.file_already_exists,
-                taskContentItem.content.displayName
-            )
-            this.taskContentItem = taskContentItem
-            this.task = task
+        @Synchronized private fun refresh() {
+            val entry = queue.first()?.second
+            taskContentItem = entry?.first
+            task = entry?.second
         }
-
-        private fun reset() {
-            hasConflict = false
-            task = null
-            message = emptyString
-            taskContentItem = null
+        @Synchronized fun interceptTask(item: TaskContentItem, owner: Task) {
+            owner.checkpoint()
+            queue.put(owner.id, item to owner)
+            refresh()
         }
-
+        @Synchronized fun remove(taskId: String) { queue.remove(taskId); refresh() }
         fun hide() {
-            reset()
+            val current = task ?: return
+            current.abortTask()
+            current.progressMonitor.status = TaskStatus.CANCELLED
+            current.progressMonitor.summary = "Cancelled while waiting for a conflict decision"
+            current.checkpoint()
+            remove(current.id)
+            globalClass.taskManager.handleTaskStatusChange(current, TaskStatus.CANCELLED)
         }
-
         fun resolve(resolution: TaskContentStatus, applyToAllConflicts: Boolean = false) {
-            val currentTask = task
-            val currentItem = taskContentItem
-
-            if (currentTask == null || currentItem == null) return
-
-            currentItem.status = resolution
-
-            if (applyToAllConflicts) {
-                globalClass.taskManager.overrideConflicts(currentTask.id, resolution)
-            }
-
-            // Reset before continuing to avoid race conditions
-            hide()
-
-            // Continue the task
-            globalClass.taskManager.continueTask(currentTask.id)
+            val owner = task ?: return
+            val item = taskContentItem ?: return
+            item.status = resolution
+            if (applyToAllConflicts) owner.overrideConflicts(resolution)
+            remove(owner.id)
+            globalClass.taskManager.continueTask(owner.id)
         }
     }
 

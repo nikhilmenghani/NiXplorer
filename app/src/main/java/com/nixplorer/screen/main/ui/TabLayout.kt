@@ -28,6 +28,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -277,6 +278,7 @@ fun OptionsMenu(
         containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
     ) {
         val manager = globalClass.mainActivityManager
+        val menuState by manager.state.collectAsState()
         DropdownMenuItem(
             text = { Text(stringResource(R.string.duplicate_tab)) },
             onClick = {
@@ -286,7 +288,7 @@ fun OptionsMenu(
         )
         DropdownMenuItem(
             text = { Text(stringResource(R.string.close)) },
-            enabled = manager.state.value.tabs.size > 1,
+            enabled = menuState.tabs.size > 1,
             onClick = {
                 onDismiss()
                 val currentIndex = manager.state.value.tabs.indexOfFirst { it.id == tab.id }

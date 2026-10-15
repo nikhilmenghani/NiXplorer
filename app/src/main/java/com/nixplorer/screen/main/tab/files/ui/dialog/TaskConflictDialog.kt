@@ -27,7 +27,7 @@ import com.nixplorer.screen.main.tab.files.task.TaskContentStatus
 @Composable
 fun TaskConflictDialog() {
     val interceptor = globalClass.taskManager.taskInterceptor
-    var applyToOtherConflicts by remember { mutableStateOf(interceptor.hasConflict) }
+    var applyToOtherConflicts by remember(interceptor.task?.id) { mutableStateOf(false) }
 
     if (interceptor.hasConflict) {
         Dialog(

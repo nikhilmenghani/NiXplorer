@@ -684,10 +684,10 @@ private fun TaskItem(
                     exit = scaleOut(targetScale = 0.5f) + slideOutVertically { -it / 4 } + fadeOut()
                 ) {
                     Text(
-                        text = if (task.progressMonitor.status == TaskStatus.FAILED) task.progressMonitor.summary else task.metadata.displayDetails,
+                        text = task.progressMonitor.summary.ifEmpty { task.metadata.displayDetails },
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
-                        maxLines = 3
+                        maxLines = Int.MAX_VALUE
                     )
                 }
             }

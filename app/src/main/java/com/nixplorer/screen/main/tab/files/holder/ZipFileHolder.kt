@@ -100,8 +100,11 @@ class ZipFileHolder(
             isOverrideExistingFilesInZip = false
         }
 
-        ZipFile(zipTree.source.file).use { zipFile ->
-            zipFile.addStream(ByteArrayInputStream(ByteArray(0)), params)
+        com.nixplorer.screen.main.tab.files.zip.ArchiveEdits.update(zipTree.source.file) { stage ->
+            ZipFile(stage).use { zipFile ->
+                com.nixplorer.screen.main.tab.files.task.SafeFileOperations.relativePath(path)
+                zipFile.addStream(ByteArrayInputStream(ByteArray(0)), params)
+            }
         }
 
         zipTree.prepare()
@@ -118,8 +121,11 @@ class ZipFileHolder(
             isOverrideExistingFilesInZip = false
         }
 
-        ZipFile(zipTree.source.file).use { zipFile ->
-            zipFile.addStream(ByteArrayInputStream(ByteArray(0)), params)
+        com.nixplorer.screen.main.tab.files.zip.ArchiveEdits.update(zipTree.source.file) { stage ->
+            ZipFile(stage).use { zipFile ->
+                com.nixplorer.screen.main.tab.files.task.SafeFileOperations.relativePath(path)
+                zipFile.addStream(ByteArrayInputStream(ByteArray(0)), params)
+            }
         }
 
         zipTree.prepare()
@@ -170,19 +176,18 @@ class ZipFileHolder(
         }
     }
 
-    suspend fun extractForPreview(): String {
-        val path = zipTree.createExtractionDestinationDirFor(node).absolutePath
-        try {
-            ZipFile(zipTree.source.file).use { zipFile ->
-                zipFile.extractFile(
-                    node.path,
-                    zipTree.cleanOnExitDir.uniquePath
-                )
-            }
-        } catch (e: Exception) {
-            logger.logError(e)
+    suspend fun extractForPreview(): String = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+        com.nixplorer.screen.main.tab.files.zip.ArchiveSafety.validate(zipTree.source.file)
+        val root = zipTree.cleanOnExitDir.file
+        val job = kotlinx.coroutines.currentCoroutineContext()[kotlinx.coroutines.Job]
+        ZipFile(zipTree.source.file).use { zip ->
+            val header = requireNotNull(zip.getFileHeader(node.path)) { "Archive entry no longer exists" }
+            com.nixplorer.screen.main.tab.files.task.SafeFileOperations.stagedStream(root, node.path, true,
+                com.nixplorer.screen.main.tab.files.zip.ArchiveSafety.MAX_ENTRY_BYTES,
+                { job?.isActive == false }, expectedBytes = header.uncompressedSize,
+                input = { zip.getInputStream(header) })
         }
-        return path
+        zipTree.createExtractionDestinationDirFor(node).absolutePath
     }
 
     private suspend fun createDetails(): String {

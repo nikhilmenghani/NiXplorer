@@ -1,5 +1,6 @@
 package com.nixplorer.screen.archive
 
+import com.nixplorer.screen.main.tab.files.zip.ArchiveSafety
 import java.io.File
 import java.nio.ByteBuffer
 import java.util.zip.ZipEntry
@@ -19,6 +20,7 @@ internal fun isRar(source: File): Boolean = source.inputStream().use {
 
 internal suspend fun unlockRar(source: File, password: CharArray?): File {
     val output = File(source.parentFile, source.name + ".zip")
+    val limits = ConversionLimits()
     val job = currentCoroutineContext()[kotlinx.coroutines.Job]
     val options = com.github.junrar.ArchiveOptions.builder().maxDictionarySize(128L * 1024 * 1024)
         .apply { if (password != null) password(password) }.build()
@@ -27,19 +29,21 @@ internal suspend fun unlockRar(source: File, password: CharArray?): File {
             if (archive.isPasswordProtected && password == null) throw ArchivePasswordRequired()
             ZipOutputStream(output.outputStream().buffered()).use { zip ->
                 zip.setLevel(0)
-                val seen = hashSetOf<String>()
+                val seen = ArchiveSafety.Paths()
                 archive.fileHeaders.forEach { header ->
                     currentCoroutineContext().ensureActive()
                     val path = safeArchivePath(header.fileName)
                     if (path.isNotEmpty()) {
                         val name = path + if (header.isDirectory) "/" else ""
-                        require(seen.add(name)) { "Duplicate archive path" }
+                        seen.add(name, name.endsWith('/'))
+                        limits.entry()
                         zip.putNextEntry(ZipEntry(name))
                         if (!header.isDirectory) archive.extractFile(header, object : java.io.OutputStream() {
                             override fun write(value: Int) { write(byteArrayOf(value.toByte()), 0, 1) }
                             override fun write(bytes: ByteArray, offset: Int, count: Int) {
                                 job?.ensureActive()
                                 check(output.parentFile!!.usableSpace > 64L * 1024 * 1024) { "Not enough temporary storage" }
+                                limits.bytes(count)
                                 zip.write(bytes, offset, count)
                             }
                         })
@@ -48,6 +52,7 @@ internal suspend fun unlockRar(source: File, password: CharArray?): File {
                 }
             }
         }
+        ArchiveSafety.validate(output)
         return output
     } catch (e: Exception) {
         output.delete()
@@ -65,11 +70,13 @@ internal fun isSevenZip(source: File): Boolean = source.inputStream().use {
 
 internal suspend fun unlockSevenZip(source: File, password: CharArray?): File {
     val output = File(source.parentFile, source.name + ".zip")
+    val limits = ConversionLimits()
     try {
-        org.apache.commons.compress.archivers.sevenz.SevenZFile(source, password).use { archive ->
+        org.apache.commons.compress.archivers.sevenz.SevenZFile.builder().setFile(source)
+            .setPassword(password).setMaxMemoryLimitKiB(128 * 1024).get().use { archive ->
             ZipOutputStream(output.outputStream().buffered()).use { zip ->
                 zip.setLevel(0)
-                val seen = hashSetOf<String>()
+                val seen = ArchiveSafety.Paths()
                 val bytes = ByteArray(64 * 1024)
                 while (true) {
                     currentCoroutineContext().ensureActive()
@@ -77,26 +84,30 @@ internal suspend fun unlockSevenZip(source: File, password: CharArray?): File {
                     val path = safeArchivePath(entry.name ?: "file")
                     if (path.isEmpty()) continue
                     val name = path + if (entry.isDirectory) "/" else ""
-                    require(seen.add(name)) { "Duplicate archive path" }
-                    zip.putNextEntry(ZipEntry(name))
+                    seen.add(name, name.endsWith('/'))
+                    limits.entry()
+                        zip.putNextEntry(ZipEntry(name))
                     if (!entry.isDirectory) while (true) {
                         currentCoroutineContext().ensureActive()
                         val count = archive.read(bytes)
                         if (count < 0) break
                         check(output.parentFile!!.usableSpace > 64L * 1024 * 1024) { "Not enough temporary storage" }
-                        zip.write(bytes, 0, count)
+                        limits.bytes(count)
+                            zip.write(bytes, 0, count)
                     }
                     zip.closeEntry()
                 }
             }
         }
+        ArchiveSafety.validate(output)
         return output
     } catch (e: Exception) {
         output.delete()
         if (e is org.apache.commons.compress.PasswordRequiredException ||
             (password != null && e is java.io.IOException &&
                 !e.message.orEmpty().contains("unsupported", true) &&
-                !e.javaClass.simpleName.contains("MemoryLimit", true))) throw ArchivePasswordRequired()
+                !e.javaClass.simpleName.contains("MemoryLimit", true) &&
+                listOf("space", "storage", "limit").none { e.message.orEmpty().contains(it, true) })) throw ArchivePasswordRequired()
         throw e
     }
 }
@@ -107,6 +118,8 @@ internal suspend fun unlockZip(source: File, password: CharArray?): File {
     if (password == null) throw ArchivePasswordRequired()
     input.setPassword(password)
     val output = File(source.parentFile, source.name + ".unlocked.zip")
+    val limits = ConversionLimits()
+    val seen = ArchiveSafety.Paths()
     try {
         input.use { archive -> ZipOutputStream(output.outputStream().buffered()).use { zip ->
             zip.setLevel(0)
@@ -114,6 +127,8 @@ internal suspend fun unlockZip(source: File, password: CharArray?): File {
                 currentCoroutineContext().ensureActive()
                 val path = safeArchivePath(header.fileName)
                 if (path.isNotEmpty()) {
+                    seen.add(path, header.isDirectory)
+                    limits.entry()
                     zip.putNextEntry(ZipEntry(path + if (header.isDirectory) "/" else ""))
                     if (!header.isDirectory) archive.getInputStream(header).use { stream ->
                         val bytes = ByteArray(64 * 1024)
@@ -122,6 +137,7 @@ internal suspend fun unlockZip(source: File, password: CharArray?): File {
                             val count = stream.read(bytes)
                             if (count < 0) break
                             check(output.parentFile!!.usableSpace > 64L * 1024 * 1024) { "Not enough temporary storage" }
+                            limits.bytes(count)
                             zip.write(bytes, 0, count)
                         }
                     }
@@ -129,6 +145,7 @@ internal suspend fun unlockZip(source: File, password: CharArray?): File {
                 }
             }
         } }
+        ArchiveSafety.validate(output)
         return output
     } catch (e: Exception) {
         output.delete()
@@ -142,12 +159,13 @@ internal fun safeArchivePath(path: String): String {
     require(!normalized.startsWith('/') && !Regex("^[A-Za-z]:").containsMatchIn(normalized)) { "Absolute archive path" }
     val parts = normalized.split('/').filter { it.isNotEmpty() && it != "." }
     require(parts.none { it == ".." || '\u0000' in it }) { "Unsafe archive path" }
-    return parts.joinToString("/")
+    return parts.joinToString("/").also { if (it.isNotEmpty()) com.nixplorer.screen.main.tab.files.task.SafeFileOperations.relativePath(it) }
 }
 
 /** Normalize read-only formats into a disposable ZIP for the existing browsing/extraction pipeline. */
 internal suspend fun convertArchiveToZip(source: File, password: CharArray? = null): File {
     val output = File(source.parentFile, source.name + ".zip")
+    val limits = ConversionLimits()
     val reader = Archive.readNew()
     var requestedPassword = false
     var encrypted = false
@@ -159,10 +177,10 @@ internal suspend fun convertArchiveToZip(source: File, password: CharArray? = nu
         if (password != null) Archive.readAddPassphrase(reader, String(password).toByteArray(Charsets.UTF_8))
         Archive.readSetPassphraseCallback<Unit>(reader, Unit) { _, _ -> requestedPassword = true; null }
         Archive.readOpenFileName(reader, source.absolutePath.toByteArray(Charsets.UTF_8), 64 * 1024L)
-        val seen = hashSetOf<String>()
+        val seen = ArchiveSafety.Paths()
         val buffer = ByteBuffer.allocateDirect(64 * 1024)
         val bytes = ByteArray(buffer.capacity())
-        val budget = (source.parentFile!!.usableSpace - 64L * 1024 * 1024).coerceAtLeast(0)
+        val budget = minOf(ArchiveSafety.MAX_TOTAL_BYTES, (source.parentFile!!.usableSpace - 64L * 1024 * 1024).coerceAtLeast(0))
         var written = 0L
         ZipOutputStream(output.outputStream().buffered()).use { zip ->
             zip.setLevel(0)
@@ -181,7 +199,8 @@ internal suspend fun convertArchiveToZip(source: File, password: CharArray? = nu
                 val path = safeArchivePath(raw)
                 if (path.isEmpty()) { Archive.readDataSkip(reader); continue }
                 val name = path + if (directory) "/" else ""
-                require(seen.add(name)) { "Duplicate archive path" }
+                seen.add(name, name.endsWith('/'))
+                limits.entry()
                 zip.putNextEntry(ZipEntry(name).apply {
                     if (ArchiveEntry.mtimeIsSet(entry)) time = ArchiveEntry.mtime(entry) * 1000
                 })
@@ -195,11 +214,13 @@ internal suspend fun convertArchiveToZip(source: File, password: CharArray? = nu
                     require(written <= budget) { "Not enough temporary storage to open archive" }
                     buffer.flip()
                     buffer.get(bytes, 0, count)
-                    zip.write(bytes, 0, count)
+                    limits.bytes(count)
+                            zip.write(bytes, 0, count)
                 }
                 zip.closeEntry()
             }
         }
+        ArchiveSafety.validate(output)
         return output
     } catch (e: Exception) {
         output.delete()
@@ -208,4 +229,15 @@ internal suspend fun convertArchiveToZip(source: File, password: CharArray? = nu
             !e.message.orEmpty().contains("not supported", true)) throw ArchivePasswordRequired()
         throw e
     } finally { Archive.readFree(reader) }
+}
+
+private class ConversionLimits {
+    private var entries = 0
+    private var total = 0L
+    private var entryBytes = 0L
+    fun entry() { require(++entries <= com.nixplorer.screen.main.tab.files.task.SafeFileOperations.MAX_ITEMS) { "Too many archive entries" }; entryBytes = 0 }
+    fun bytes(count: Int) {
+        entryBytes += count; total += count
+        require(entryBytes <= ArchiveSafety.MAX_ENTRY_BYTES && total <= ArchiveSafety.MAX_TOTAL_BYTES) { "Archive extraction limit exceeded" }
+    }
 }

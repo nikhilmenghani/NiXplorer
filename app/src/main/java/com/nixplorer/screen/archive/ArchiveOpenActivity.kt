@@ -21,7 +21,6 @@ import com.nixplorer.screen.main.tab.files.holder.LocalFileHolder
 import com.nixplorer.theme.FileExplorerTheme
 import java.io.File
 import java.util.UUID
-import java.util.zip.ZipFile
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.currentCoroutineContext
@@ -42,6 +41,7 @@ class ArchiveOpenActivity : BaseActivity() {
         setContent {
             FileExplorerTheme {
                 var failed by remember(source) { mutableStateOf(false) }
+                var failureReason by remember(source) { mutableStateOf("Unable to open archive") }
                 var prepared by remember(source) { mutableStateOf<File?>(null) }
                 var passwordPrompt by remember(source) { mutableStateOf(false) }
                 var passwordText by remember(source) { mutableStateOf("") }
@@ -76,13 +76,19 @@ class ArchiveOpenActivity : BaseActivity() {
                             val target = File(directory, safeName)
                             try {
                                 val input = if (source.scheme == "file") File(requireNotNull(source.path)).inputStream()
-                                    else requireNotNull(contentResolver.openInputStream(source))
+                                    else {
+                                        com.nixplorer.screen.main.tab.files.provider.DocumentProviderAccess.retainOfferedReadGrant(this@ArchiveOpenActivity, source, intent.flags)
+                                        com.nixplorer.screen.main.tab.files.provider.DocumentProviderAccess.openRead(this@ArchiveOpenActivity, source)
+                                    }
                                 input.use { from -> target.outputStream().use { to ->
+                                    var incomingBytes = 0L
                                     val buffer = ByteArray(64 * 1024)
                                     while (true) {
                                         currentCoroutineContext().ensureActive()
                                         val count = from.read(buffer)
                                         if (count < 0) break
+                                        incomingBytes += count
+                                        require(incomingBytes <= com.nixplorer.screen.main.tab.files.zip.ArchiveSafety.MAX_TOTAL_BYTES) { "Archive exceeds import limit (32 GiB)" }
                                         to.write(buffer, 0, count)
                                     }
                                 } }
@@ -94,14 +100,14 @@ class ArchiveOpenActivity : BaseActivity() {
                             }
                         }
                     } catch (e: CancellationException) { throw e }
-                    catch (e: Exception) { globalClass.logger.logError(e); failed = true }
+                    catch (e: Exception) { globalClass.logger.logError(e); failureReason = e.message ?: "Unable to open archive"; failed = true }
                 }
                 LaunchedEffect(prepared, attempt) {
                     val file = prepared ?: return@LaunchedEffect
                     val password = credential
                     try {
                         val archive = withContext(Dispatchers.IO) {
-                            if (runCatching { ZipFile(file).use { } }.isSuccess) unlockZip(file, password)
+                            if (net.lingala.zip4j.ZipFile(file).use { it.isValidZipFile }) unlockZip(file, password)
                             else if (isSevenZip(file)) unlockSevenZip(file, password)
                             else if (isRar(file)) unlockRar(file, password)
                             else convertArchiveToZip(file, password)
@@ -115,7 +121,7 @@ class ArchiveOpenActivity : BaseActivity() {
                     catch (_: ArchivePasswordRequired) {
                         passwordError = password != null
                         passwordPrompt = true
-                    } catch (e: Exception) { globalClass.logger.logError(e); failed = true }
+                    } catch (e: Exception) { globalClass.logger.logError(e); failureReason = e.message ?: "Unable to open archive"; failed = true }
                     finally { password?.fill('\u0000'); credential = null }
                 }
                 fun submitPassword() {
@@ -141,7 +147,7 @@ class ArchiveOpenActivity : BaseActivity() {
                     Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().padding(24.dp),
                         horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
                         if (failed) {
-                            Text(stringResource(R.string.archive_open_failed))
+                            Text(failureReason)
                             TextButton(onClick = { finish() }) { Text(stringResource(R.string.dismiss)) }
                         } else {
                             CircularProgressIndicator()

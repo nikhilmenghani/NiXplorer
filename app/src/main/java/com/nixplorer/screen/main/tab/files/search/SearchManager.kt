@@ -22,6 +22,8 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.yield
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.currentCoroutineContext
 import java.io.BufferedReader
 import java.io.FileReader
 import java.util.concurrent.ConcurrentLinkedQueue
@@ -38,7 +40,11 @@ class SearchManager {
     val searchResults = mutableStateListOf<SearchResult>()
 
     private var searchJob: Job? = null
+    private var searchGeneration = 0
+    private class SearchLimitReached : RuntimeException()
     private var uiUpdateJob: Job? = null
+    var incompleteReason by mutableStateOf<String?>(null)
+        private set
     private val editableExtensions = FileMimeType.editableFileType.toSet()
     private val codeExtensions = FileMimeType.codeFileType.toSet()
 
@@ -57,10 +63,12 @@ class SearchManager {
             return
         }
 
+        val session = ++searchGeneration
         searchJob?.cancel()
         uiUpdateJob?.cancel()
         clearResults()
         pendingResults.clear()
+        incompleteReason = null
         isSearching = true
         searchProgress = 0f
         internalProgress = 0f
@@ -88,23 +96,26 @@ class SearchManager {
                     searchInFolder(tab.activeFolder, searchPattern)
                 }
 
+                currentCoroutineContext().ensureActive()
                 internalProgress = 1f
                 updateUiState() // Final update
                 flushPendingResults() // Flush any remaining results
             } catch (_: PatternSyntaxException) {
                 globalClass.showMsg(globalClass.getString(R.string.invalid_search_regex))
             } catch (_: CancellationException) {
-                // Search was cancelled
+                if (session == searchGeneration) incompleteReason = "Search stopped; results are incomplete"
             } catch (e: Exception) {
                 // Handle other errors
                 logger.logError(e)
-                globalClass.showMsg(globalClass.getString(R.string.something_went_wrong))
+                if (session == searchGeneration) incompleteReason = "Incomplete results: ${e.message}"
             } finally {
+                if (session == searchGeneration) {
                 isSearching = false
                 uiUpdateJob?.cancel()
                 updateUiState() // Final cleanup
                 flushPendingResults() // Final flush
                 internalCurrentFile = emptyString
+                }
             }
         }
     }
@@ -143,6 +154,8 @@ class SearchManager {
     }
 
     fun stopSearch() {
+        ++searchGeneration
+        incompleteReason = "Search stopped; results are incomplete"
         searchJob?.cancel()
         uiUpdateJob?.cancel()
         isSearching = false
@@ -152,6 +165,7 @@ class SearchManager {
     }
 
     fun clearResults() {
+        incompleteReason = null
         searchResults.clear()
         pendingResults.clear()
         searchProgress = 0f
@@ -181,50 +195,45 @@ class SearchManager {
         }
     }
 
-    private suspend fun searchInFolder(
-        folder: ContentHolder,
-        searchPattern: Pattern?
-    ) {
-        if (!isSearching || !folder.isFolder) return
-        try {
-            var processedItems = 0
-
-            suspend fun processFolder(currentFolder: ContentHolder) {
+    private suspend fun searchInFolder(folder: ContentHolder, searchPattern: Pattern?) = withContext(Dispatchers.IO) {
+        var processed = 0
+        suspend fun process(current: ContentHolder, depth: Int) {
+            currentCoroutineContext().ensureActive()
+            if (!isSearching) return
+            if (depth > com.nixplorer.screen.main.tab.files.task.SafeFileOperations.MAX_DEPTH) {
+                incompleteReason = "Incomplete results: folder nesting limit reached"; return
+            }
+            suspend fun visit(item: ContentHolder) {
+                currentCoroutineContext().ensureActive()
                 if (!isSearching) return
-
-                if (currentFolder.isFolder) {
-                    try {
-                        val folderContent = currentFolder.listContent()
-                        for (item in folderContent) {
-                            if (!isSearching) return
-
-                            updateInternalProgress(-1f, item.displayName)
-                            processedItems++
-
-                            if (item.isFolder) {
-                                searchInItem(item, searchPattern)
-                                processFolder(item)
-                            } else {
-                                searchInItem(item, searchPattern)
-                            }
-
-                            if (getTotalResultsCount() >= searchOptions.maxResults) return
-
-                            // Only yield occasionally to prevent blocking
-                            if (processedItems % 50 == 0) {
-                                yield()
-                            }
-                        }
-                    } catch (_: Exception) {
-                        // Skip folders that can't be accessed
-                    }
+                if (++processed > com.nixplorer.screen.main.tab.files.task.SafeFileOperations.MAX_ITEMS ||
+                    getTotalResultsCount() >= searchOptions.maxResults) {
+                    throw SearchLimitReached()
+                }
+                updateInternalProgress(-1f, item.displayName)
+                if (item is LocalFileHolder && java.nio.file.Files.isSymbolicLink(item.file.toPath())) {
+                    incompleteReason = "Incomplete results: symbolic links were skipped"
+                    return
+                }
+                searchInItem(item, searchPattern)
+                if (item.isFolder) {
+                    if (item is LocalFileHolder && java.nio.file.Files.isSymbolicLink(item.file.toPath())) {
+                        incompleteReason = "Incomplete results: symbolic link folders were skipped"
+                    } else process(item, depth + 1)
                 }
             }
-
-            processFolder(folder)
-        } catch (_: Exception) {
-            // folder access errors
+            try {
+                if (current is LocalFileHolder) {
+                    current.forEachChild { item ->
+                        if (processed <= com.nixplorer.screen.main.tab.files.task.SafeFileOperations.MAX_ITEMS && getTotalResultsCount() < searchOptions.maxResults) visit(item)
+                        else throw SearchLimitReached()
+                    }
+                } else current.listContent().forEach { visit(it) }
+            } catch (e: CancellationException) { throw e }
+            catch (e: SearchLimitReached) { throw e }
+            catch (e: Exception) { incompleteReason = "Incomplete results: ${e.message}" }
         }
+        try { process(folder, 0) } catch (_: SearchLimitReached) { incompleteReason = "Incomplete results: search limit reached" }
     }
 
     private fun getTotalResultsCount(): Int {
@@ -235,6 +244,7 @@ class SearchManager {
         item: ContentHolder,
         searchPattern: Pattern?
     ) {
+        currentCoroutineContext().ensureActive()
         if (!isSearching) return
 
         // Search by extension
@@ -280,6 +290,7 @@ class SearchManager {
                     var line: String?
 
                     while (reader.readLine().also { line = it } != null && isSearching) {
+                        currentCoroutineContext().ensureActive()
                         lineNumber++
                         line?.let { currentLine ->
                             if (matchesQuery(currentLine, searchPattern)) {
@@ -304,8 +315,9 @@ class SearchManager {
                     }
                 }
             }
-        } catch (_: Exception) {
-            // Skip files that can't be read
+        } catch (e: CancellationException) { throw e }
+        catch (e: Exception) {
+            incompleteReason = "Incomplete results: cannot read ${file.displayName}: ${e.message}"
         }
     }
 

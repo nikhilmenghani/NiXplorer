@@ -19,9 +19,6 @@ import net.lingala.zip4j.ZipFile
 import net.lingala.zip4j.model.ZipParameters
 import java.io.ByteArrayInputStream
 import java.io.File
-import java.nio.file.AtomicMoveNotSupportedException
-import java.nio.file.Files
-import java.nio.file.StandardCopyOption
 
 class CopyTask(
     val sourceFiles: List<ContentHolder>,
@@ -29,13 +26,35 @@ class CopyTask(
 ) : Task() {
     private var parameters: CopyTaskParameters? = null
     private val pendingFiles: ArrayList<TaskContentItem> = arrayListOf()
-    private var canPerformAtomicFileMove = true
+    private val sourceDirectories = linkedMapOf<File, SafeFileOperations.Identity>()
+    private var sourceDirectoryCharacters = 0L
+    private val directoryErrors = linkedMapOf<File, String>()
+    private val deletedDirectories = hashSetOf<File>()
+    private var extractionBytes = 0L
+    private var activeJob: kotlinx.coroutines.Job? = null
 
     override val metadata = createTaskMetadata()
     override val progressMonitor = TaskProgressMonitor(
         status = TaskStatus.PENDING,
         taskTitle = metadata.title,
     )
+
+    override fun recoveryRecord() = OperationRecord(id, metadata.title, if (deleteSourceFiles) "move" else "copy",
+        sourceFiles.map { describe(it) }, parameters?.destHolder?.let { describe(it) }, getCurrentStatus().name,
+        progressMonitor.summary, pendingFiles.map { item -> OperationItemRecord(describe(item.content),
+            parameters?.destHolder?.let { describe(it) + "/" + item.relativePath } ?: item.relativePath,
+            item.status.name, item.error, item.copied, item.sourceDeleted, item.sourceIdentity) } +
+            sourceDirectories.map { (file, identity) -> OperationItemRecord(file.path, "", if (file in deletedDirectories) "SUCCESS" else "DIRECTORY",
+                directoryErrors[file], false, file in deletedDirectories, identity) })
+
+    private fun checkpointItem(item: TaskContentItem) {
+        globalClass.taskManager.journal.saveItem(id, OperationItemRecord(describe(item.content),
+            parameters?.destHolder?.let { describe(it) + "/" + item.relativePath } ?: item.relativePath,
+            item.status.name, item.error, item.copied, item.sourceDeleted, item.sourceIdentity))
+    }
+
+    private fun describe(holder: ContentHolder): String = if (holder is ZipFileHolder)
+        holder.zipTree.source.uniquePath + "!/" + holder.node.path else holder.uniquePath
 
     override fun getCurrentStatus() = progressMonitor.status
     override suspend fun validate() = sourceFiles.all { it.isValid() && it.canRead }
@@ -48,24 +67,32 @@ class CopyTask(
         run(parameters!!)
     }
 
-    override suspend fun run(params: TaskParameters) {
+    override suspend fun run(params: TaskParameters) = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
         parameters = params as? CopyTaskParameters
 
-        if (!initializeTask()) return
-
+        activeJob = kotlinx.coroutines.currentCoroutineContext()[kotlinx.coroutines.Job]
         try {
+            if (!initializeTask()) return@withContext
+            checkpoint()
             executeTaskBasedOnSourceType()
+            checkpoint()
             if (deleteSourceFiles) {
                 performSourceDeletion()
             }
             alignApkIfNecessary()
             finalizeTask()
+            checkpoint()
+        } catch (e: java.util.concurrent.CancellationException) {
+            progressMonitor.status = TaskStatus.CANCELLED
+            progressMonitor.summary = "Cancelled. Completed items retained; incomplete writes discarded."
         } catch (e: Exception) {
             handleTaskError(e)
         }
     }
 
     override suspend fun continueTask() {
+        aborted = false
+        pendingFiles.filter { it.status == TaskContentStatus.FAILED }.forEach { it.status = if (it.copied) TaskContentStatus.SUCCESS else TaskContentStatus.PENDING; it.error = null }
         parameters?.let { run(it) } ?: run {
             markAsFailed(globalClass.resources.getString(R.string.task_summary_missing_destination))
         }
@@ -89,7 +116,7 @@ class CopyTask(
                     progress = -1f
                     contentName = emptyString
                 }
-                ZipAlign.alignApk(destinationHolder.zipTree.source.file)
+                com.nixplorer.screen.main.tab.files.zip.ArchiveEdits.update(destinationHolder.zipTree.source.file, { aborted || activeJob?.isActive == false }) { ZipAlign.alignApk(it) }
             }
         }
     }
@@ -118,7 +145,7 @@ class CopyTask(
 
     private fun initializeTask(): Boolean {
         progressMonitor.status = TaskStatus.RUNNING
-        aborted = false
+        SafeFileOperations.checkCancelled { aborted || activeJob?.isActive == false }
         protect = false
 
         if (sourceFiles.isEmpty()) {
@@ -139,40 +166,30 @@ class CopyTask(
     }
 
     private fun validateDestination(destHolder: ContentHolder): Boolean {
-        val firstSource = sourceFiles.first()
-
-        // Prevent copying into self for local files
-        if (firstSource is LocalFileHolder && destHolder is LocalFileHolder) {
-            val sourceParent = firstSource.file.parentFile?.canonicalPath
-            val destPath = destHolder.file.canonicalPath
-            if (sourceParent == destPath) {
-                markAsFailed(globalClass.resources.getString(R.string.task_summary_invalid_dest))
-                return false
+        try {
+            require(sourceFiles.all { it is LocalFileHolder } || sourceFiles.all { it is ZipFileHolder }) { "Mixed storage sources are not supported" }
+            require(sourceFiles.all { it is LocalFileHolder || it is ZipFileHolder }) { "Unsupported storage provider; operation cannot be completed" }
+            require(destHolder is LocalFileHolder || destHolder is ZipFileHolder) { "Unsupported storage provider destination" }
+            require(destHolder.canWrite && destHolder.isFolder) { "Destination is unavailable or access was revoked" }
+            if (sourceFiles.all { it is LocalFileHolder } && destHolder is LocalFileHolder) {
+                SafeFileOperations.validateCopyPaths(sourceFiles.map { (it as LocalFileHolder).file }, destHolder.file)
             }
-        }
-
-        // Prevent copying zip directory into itself
-        if (firstSource is ZipFileHolder && destHolder is ZipFileHolder) {
-            val sourceFile = firstSource.zipTree.source.file.canonicalPath
-            val destFile = destHolder.zipTree.source.file.canonicalPath
-
-            if (sourceFile == destFile) {
-                runBlocking {
-                    if (firstSource.getParent()?.uniquePath == destHolder.uniquePath) {
-                        markAsFailed(globalClass.resources.getString(R.string.task_summary_invalid_dest))
-                        return@runBlocking false
-                    }
-                }
+            if (destHolder is ZipFileHolder) {
+                require(sourceFiles.none { it is ZipFileHolder && it.zipTree.source.file.canonicalFile == destHolder.zipTree.source.file.canonicalFile }) { "Copy/move within the same archive is not supported safely" }
+                require(sourceFiles.none { it is LocalFileHolder && (destHolder.zipTree.source.file.canonicalFile.toPath().startsWith(it.file.canonicalFile.toPath())) }) { "Archive destination overlaps a source" }
             }
-        }
-
-        return true
+            return true
+        } catch (e: Exception) { markAsFailed(e.message ?: "Invalid destination"); return false }
     }
 
     private fun executeTaskBasedOnSourceType() {
         val sample = sourceFiles.first()
         val destHolder = parameters!!.destHolder
         val sourcePath = runBlocking { sample.getParent()?.uniquePath ?: emptyString }
+        if (sample is ZipFileHolder) {
+            require(sourceFiles.all { it is ZipFileHolder && it.zipTree.source.uniquePath == sample.zipTree.source.uniquePath }) { "Select entries from one archive at a time" }
+            com.nixplorer.screen.main.tab.files.zip.ArchiveSafety.validate(sample.zipTree.source.file)
+        }
 
         when {
             sample is LocalFileHolder && destHolder is LocalFileHolder ->
@@ -194,7 +211,7 @@ class CopyTask(
 
     private fun markAsFailed(info: String) {
         progressMonitor.apply {
-            status = TaskStatus.FAILED
+            status = if (pendingFiles.any { it.copied }) TaskStatus.PARTIAL_FAILURE else TaskStatus.FAILED
             summary = info
         }
     }
@@ -211,46 +228,38 @@ class CopyTask(
 
     private fun finalizeTask() {
         if (progressMonitor.status == TaskStatus.RUNNING) {
-            progressMonitor.status = TaskStatus.SUCCESS
-            progressMonitor.summary = buildString {
-                pendingFiles.forEach { content ->
-                    append(content.content.displayName)
-                    append(" -> ")
-                    append(content.status.name)
-                    append("\n")
-                }
-            }
+            val failures = pendingFiles.count { it.status == TaskContentStatus.FAILED }
+            val retainedFolders = if (deleteSourceFiles) sourceDirectories.keys.filter { it !in deletedDirectories && it.exists() } else emptyList()
+            progressMonitor.status = copyOutcome(pendingFiles.map { it.status })
+            progressMonitor.progress = 1f
+            if (failures > 0 && pendingFiles.any { it.copied }) progressMonitor.status = TaskStatus.PARTIAL_FAILURE
+            if (retainedFolders.isNotEmpty() && progressMonitor.status == TaskStatus.SUCCESS) progressMonitor.status = TaskStatus.PARTIAL_FAILURE
+            progressMonitor.summary = pendingFiles.joinToString("\n") {
+                "${it.relativePath}: ${it.status}${it.error?.let { error -> " — $error" } ?: ""}"
+            } + if (retainedFolders.isNotEmpty()) "\nSource directories retained for review: ${retainedFolders.joinToString { it.path }}" else ""
+            progressMonitor.summary += if (failures > 0) "\nRetry will process failed items only. Check access and free space." else ""
         }
     }
 
     private fun preparePendingFiles(sourcePath: String) {
-        val destHolder = parameters!!.destHolder
-        var hasInvalidNesting = false
-        val isSameZipFiles = (sourceFiles.first() is ZipFileHolder && destHolder is ZipFileHolder)
-                && (sourceFiles.first() as ZipFileHolder).zipTree.source.uniquePath == destHolder.zipTree.source.uniquePath
-
-        if (pendingFiles.isEmpty()) {
+        if (pendingFiles.isNotEmpty()) return
+        var plannedPathCharacters = 0L
+        val destinationLength = parameters!!.destHolder.uniquePath.length
+        try {
             sourceFiles.forEach { source ->
-                // Prevent moving into source subdirectories
-                if (deleteSourceFiles
-                    && source.isFolder
-                    && (((source is ZipFileHolder && destHolder is ZipFileHolder) && (isSameZipFiles))
-                            || (source is LocalFileHolder && destHolder is LocalFileHolder))
-                ) {
-                    val destPath = destHolder.uniquePath
-                    if (!hasInvalidNesting && destPath.startsWith(source.uniquePath)) {
-                        hasInvalidNesting = true
-                    } else {
-                        pendingFiles.addAll(listFilesWithRelativePath(sourcePath, source))
-                    }
-                } else {
-                    pendingFiles.addAll(listFilesWithRelativePath(sourcePath, source))
-                }
+                SafeFileOperations.checkCancelled { aborted || activeJob?.isActive == false }
+                val items = listFilesWithRelativePath(sourcePath, source)
+                require(pendingFiles.size + items.size + sourceDirectories.size <= SafeFileOperations.MAX_ITEMS) { "Too many files; select smaller folders" }
+                pendingFiles.addAll(items)
+                plannedPathCharacters += items.sumOf { it.content.uniquePath.length.toLong() + it.relativePath.length + destinationLength }
+                require(plannedPathCharacters + sourceDirectoryCharacters <= SafeFileOperations.MAX_PLAN_PATH_CHARACTERS) { "Copy plan exceeds memory limit; select smaller folders" }
+                progressMonitor.totalContent = pendingFiles.size
             }
-
-            if (hasInvalidNesting) {
-                markAsFailed(globalClass.getString(R.string.some_files_are_moved_into_their_subdirectories_those_will_be_excluded))
-            }
+            checkpoint()
+        } catch (e: Exception) {
+            // Enumeration must complete before any writes. Retrying an incomplete plan must enumerate again.
+            pendingFiles.clear(); sourceDirectories.clear(); sourceDirectoryCharacters = 0L
+            throw e
         }
     }
 
@@ -258,7 +267,7 @@ class CopyTask(
         progressMonitor.apply {
             contentName = itemName
             remainingContent = pendingFiles.size - (index + 1)
-            progress = (index + 1f) / pendingFiles.size
+            progress = index.toFloat() / pendingFiles.size
         }
     }
 
@@ -291,6 +300,7 @@ class CopyTask(
 
         progressMonitor.processName =
             globalClass.resources.getString(R.string.deleting_source_files)
+        progressMonitor.progress = -1f // Verification/cleanup has not completed merely because copying finished.
 
         when (val sample = sourceFiles.first()) {
             is LocalFileHolder -> deleteLocalSources()
@@ -299,62 +309,49 @@ class CopyTask(
     }
 
     private fun deleteLocalSources() {
-        val successfulItems = pendingFiles.filter { it.status == TaskContentStatus.SUCCESS }
-
-        successfulItems.forEachIndexed { index, item ->
-            if (aborted) {
-                progressMonitor.status = TaskStatus.PAUSED
-                return
+        val destination = parameters!!.destHolder
+        pendingFiles.filter { it.status == TaskContentStatus.SUCCESS && !it.sourceDeleted }.forEach { item ->
+            SafeFileOperations.checkCancelled { aborted || activeJob?.isActive == false }
+            // Empty directory cleanup is intentionally separate; never recursively unlink after a move.
+            val file = (item.content as LocalFileHolder).file
+            if (item.sourceIdentity == null) {
+                if (file.isFile) {
+                    item.status = TaskContentStatus.FAILED
+                    item.error = "Copied successfully; source retained. Verified moves into archives are not supported. Review the archive before deleting the source explicitly."
+                }
+                return@forEach
             }
-
-            progressMonitor.apply {
-                remainingContent = successfulItems.size - (index + 1)
-                contentName = item.content.displayName
-                progress = (index + 1f) / successfulItems.size
-            }
-
-            (item.content as LocalFileHolder).file.deleteRecursively()
+            try {
+                require(destination is LocalFileHolder) { "Source retained: moving into an archive needs manual source deletion" }
+                SafeFileOperations.deleteVerifiedSource(file,
+                    SafeFileOperations.contained(destination.file, item.relativePath), item.sourceIdentity!!, { aborted || activeJob?.isActive == false })
+                item.sourceDeleted = true
+                checkpointItem(item)
+            } catch (e: java.util.concurrent.CancellationException) { throw e }
+            catch (e: Exception) { item.status = TaskContentStatus.FAILED; item.error = e.message }
+        }
+        if (destination is LocalFileHolder) sourceDirectories.keys.sortedByDescending { it.path.length }.forEach { directory ->
+            if (directory in deletedDirectories || !directory.exists()) return@forEach
+            SafeFileOperations.checkCancelled { aborted || activeJob?.isActive == false }
+            try {
+                val selected = sourceFiles.filterIsInstance<LocalFileHolder>().first { directory.toPath().startsWith(it.file.toPath()) }
+                val relative = directory.toRelativeString(selected.file.parentFile!!)
+                SafeFileOperations.deleteVerifiedSource(directory, SafeFileOperations.contained(destination.file, relative),
+                    sourceDirectories.getValue(directory), { aborted || activeJob?.isActive == false })
+                deletedDirectories.add(directory)
+                directoryErrors.remove(directory)
+                globalClass.taskManager.journal.saveItem(id, OperationItemRecord(directory.path, "", "SUCCESS", null, false, true, sourceDirectories.getValue(directory)))
+            } catch (e: java.util.concurrent.CancellationException) { throw e }
+            catch (e: Exception) { directoryErrors[directory] = e.message ?: "Source directory retained" }
         }
 
-        // Clean up empty directories
-        sourceFiles.forEach { content ->
-            val file = (content as LocalFileHolder).file
-            if (file.exists() && file.walkTopDown().none { it.isFile }) {
-                file.deleteRecursively()
-            }
-        }
     }
 
     private fun deleteZipSources(sample: ZipFileHolder) {
-        try {
-            ZipFile(sample.zipTree.source.file).use { zipFile ->
-                val successfulPaths = pendingFiles
-                    .filter { it.status == TaskContentStatus.SUCCESS }
-                    .map { (it.content as ZipFileHolder).node.path }
-
-                progressMonitor.apply {
-                    totalContent = successfulPaths.size
-                    remainingContent = 0
-                    contentName = emptyString
-                    progress = -1f
-                }
-
-                if (successfulPaths.isNotEmpty()) {
-                    zipFile.removeFiles(successfulPaths)
-                }
-
-                // Remove empty directories
-                sourceFiles.forEach { src ->
-                    val zipSrc = src as ZipFileHolder
-                    val hasFiles = zipSrc.node.listFilesAndEmptyDirs().any { !it.isDirectory }
-                    if (!hasFiles) {
-                        zipFile.removeFile(zipSrc.node.path)
-                    }
-                }
-            }
-        } catch (e: Exception) {
-            logger.logError(e)
-            // Don't fail the entire task if deletion fails
+        // Entries can be changed by another app between extraction and deletion. Retain rather than guessing.
+        pendingFiles.filter { it.status == TaskContentStatus.SUCCESS }.forEach {
+            it.status = TaskContentStatus.FAILED
+            it.error = "Copied successfully; archive source retained. Delete it explicitly after reviewing the destination."
         }
     }
 
@@ -375,7 +372,7 @@ class CopyTask(
 
         pendingFiles.forEachIndexed { index, item ->
             if (aborted) {
-                progressMonitor.status = TaskStatus.PAUSED
+                progressMonitor.status = TaskStatus.CANCELLED
                 return
             }
 
@@ -387,7 +384,7 @@ class CopyTask(
             }
 
             val sourceFile = (item.content as LocalFileHolder).file
-            val destinationFile = File(destinationHolder.file, item.relativePath)
+            val destinationFile = SafeFileOperations.contained(destinationHolder.file, item.relativePath)
 
             updateProgress(index, sourceFile.name)
 
@@ -396,7 +393,7 @@ class CopyTask(
             }
 
             if (item.status == TaskContentStatus.PENDING) {
-                val conflictExists = destinationFile.exists() && destinationFile.isFile
+                val conflictExists = destinationFile.exists()
                 if (conflictExists && !handleConflict(item)) {
                     return
                 }
@@ -405,6 +402,7 @@ class CopyTask(
             when (item.status) {
                 TaskContentStatus.PENDING, TaskContentStatus.REPLACE -> {
                     item.status = if (copyLocalFile(
+                            item,
                             sourceFile,
                             destinationFile,
                             item.status == TaskContentStatus.REPLACE
@@ -419,59 +417,35 @@ class CopyTask(
                 else -> { /* Already handled */
                 }
             }
+            item.copied = item.copied || item.status == TaskContentStatus.SUCCESS
+            checkpointItem(item)
         }
     }
 
-    private fun copyLocalFile(source: File, destination: File, overwrite: Boolean): Boolean {
+    private fun copyLocalFile(item: TaskContentItem, source: File, destination: File, overwrite: Boolean): Boolean {
         return try {
+            SafeFileOperations.checkCancelled { aborted || activeJob?.isActive == false }
+            require(item.content.isFolder == source.isDirectory) { "Source type changed; reselect the source before retrying: $source" }
             if (source.isFile) {
-                destination.parentFile?.mkdirs()
-                if (deleteSourceFiles) {
-                    if (!canPerformAtomicFileMove) {
-                        // Fallback to copy only - deletion will be handled by performSourceDeletion()
-                        Files.copy(
-                            source.toPath(),
-                            destination.toPath(),
-                            *buildList {
-                                add(StandardCopyOption.COPY_ATTRIBUTES)
-                                if (overwrite) add(StandardCopyOption.REPLACE_EXISTING)
-                            }.toTypedArray()
-                        )
-                    } else {
-                        try {
-                            // Try atomic move first (faster when supported)
-                            Files.move(
-                                source.toPath(),
-                                destination.toPath(),
-                                *buildList {
-                                    add(StandardCopyOption.ATOMIC_MOVE)
-                                    if (overwrite) add(StandardCopyOption.REPLACE_EXISTING)
-                                }.toTypedArray()
-                            )
-                        } catch (_: AtomicMoveNotSupportedException) {
-                            // Fallback to copy only - deletion will be handled by performSourceDeletion()
-                            Files.copy(
-                                source.toPath(),
-                                destination.toPath(),
-                                *buildList {
-                                    add(StandardCopyOption.COPY_ATTRIBUTES)
-                                    if (overwrite) add(StandardCopyOption.REPLACE_EXISTING)
-                                }.toTypedArray()
-                            )
-                            canPerformAtomicFileMove = false
-                        }
-                    }
-                } else {
-                    source.copyTo(destination, overwrite)
-                }
+                val expected = SafeFileOperations.identity(source, { aborted || activeJob?.isActive == false })
+                val root = (parameters!!.destHolder as LocalFileHolder).file
+                val baseProgress = progressMonitor.progress
+                SafeFileOperations.stagedStream(root, item.relativePath, overwrite, Long.MAX_VALUE,
+                    { aborted || activeJob?.isActive == false }, expected.bytes, expected.digest,
+                    beforePublish = { require(SafeFileOperations.identity(source, { aborted || activeJob?.isActive == false }) == expected) { "Source changed while copying; original retained" } },
+                    operationId = id, onProgress = { bytes -> progressMonitor.progress = baseProgress +
+                        (bytes.toFloat() / maxOf(1L, expected.bytes)).coerceAtMost(1f) * 0.9f / pendingFiles.size },
+                    input = { source.inputStream() })
+                item.sourceIdentity = expected
             } else {
-                destination.mkdirs() || destination.exists()
+                require(source.isDirectory) { "Source unavailable: $source" }
+                SafeFileOperations.directory(destination)
             }
+            item.copied = true
+            item.error = null
             true
-        } catch (e: Exception) {
-            logger.logError(e)
-            false
-        }
+        } catch (e: java.util.concurrent.CancellationException) { throw e }
+        catch (e: Exception) { logger.logError(e); item.error = e.message ?: "Copy failed"; false }
     }
 
     private fun copyLocalFilesToZip(sourcePath: String, destinationHolder: ZipFileHolder) {
@@ -491,7 +465,7 @@ class CopyTask(
             ZipFile(destinationHolder.zipTree.source.file).use { targetZipFile ->
                 pendingFiles.forEachIndexed { index, item ->
                     if (aborted) {
-                        progressMonitor.status = TaskStatus.PAUSED
+                        progressMonitor.status = TaskStatus.CANCELLED
                         return
                     }
 
@@ -512,7 +486,7 @@ class CopyTask(
                         createZipEntryPath(destinationHolder.node.path, item.relativePath)
 
                     if (item.status == TaskContentStatus.PENDING) {
-                        val existingHeader = targetZipFile.getFileHeader(targetPath)
+                        val existingHeader = ZipFile(destinationHolder.zipTree.source.file).use { it.getFileHeader(targetPath) }
                         val conflictExists = existingHeader != null && !existingHeader.isDirectory
                         if (conflictExists && !handleConflict(item)) {
                             return
@@ -537,9 +511,12 @@ class CopyTask(
                         else -> { /* Already handled */
                         }
                     }
+                    item.copied = item.copied || item.status == TaskContentStatus.SUCCESS
+                    checkpointItem(item)
                 }
             }
-        } catch (e: Exception) {
+        } catch (e: java.util.concurrent.CancellationException) { throw e }
+        catch (e: Exception) {
             throw RuntimeException(globalClass.getString(R.string.failed_to_copy_files_to_zip), e)
         }
     }
@@ -558,13 +535,22 @@ class CopyTask(
             }
 
             if (sourceFile.isFile) {
-                zipFile.addFile(sourceFile, params)
+                com.nixplorer.screen.main.tab.files.zip.ArchiveEdits.update(zipFile.file, { aborted || activeJob?.isActive == false }, id) { stage ->
+                    ZipFile(stage).use { stagedZip ->
+                        require(overwrite || stagedZip.getFileHeader(targetPath) == null) { "Archive destination appeared during copying; retry to resolve conflict" }
+                        stagedZip.addFile(sourceFile, params)
+                    }
+                }
             } else {
-                zipFile.addFolder(sourceFile, params)
+                com.nixplorer.screen.main.tab.files.zip.ArchiveEdits.update(zipFile.file, { aborted || activeJob?.isActive == false }, id) { stage ->
+                    ZipFile(stage).use { it.addStream(ByteArrayInputStream(ByteArray(0)), params.apply { fileNameInZip = targetPath.trimEnd('/') + "/" }) }
+                }
             }
             true
-        } catch (e: Exception) {
+        } catch (e: java.util.concurrent.CancellationException) { throw e }
+        catch (e: Exception) {
             logger.logError(e)
+            item.error = e.message ?: "Operation failed"
             false
         }
     }
@@ -581,11 +567,12 @@ class CopyTask(
         }
 
         val sourceZipFile = (sourceFiles.first() as ZipFileHolder).zipTree.source.file
+        com.nixplorer.screen.main.tab.files.zip.ArchiveSafety.validate(sourceZipFile)
         try {
             ZipFile(sourceZipFile).use { sourceZip ->
                 pendingFiles.forEachIndexed { index, item ->
                     if (aborted) {
-                        progressMonitor.status = TaskStatus.PAUSED
+                        progressMonitor.status = TaskStatus.CANCELLED
                         return
                     }
 
@@ -597,7 +584,7 @@ class CopyTask(
                     }
 
                     val sourceHolder = item.content as ZipFileHolder
-                    val destinationFile = File(destinationHolder.uniquePath, item.relativePath)
+                    val destinationFile = SafeFileOperations.contained(destinationHolder.file, item.relativePath)
 
                     updateProgress(index, sourceHolder.displayName)
 
@@ -606,7 +593,7 @@ class CopyTask(
                     }
 
                     if (item.status == TaskContentStatus.PENDING) {
-                        val conflictExists = destinationFile.exists() && destinationFile.isFile
+                        val conflictExists = destinationFile.exists()
                         if (conflictExists && !handleConflict(item)) {
                             return
                         }
@@ -615,7 +602,7 @@ class CopyTask(
                     when (item.status) {
                         TaskContentStatus.PENDING, TaskContentStatus.REPLACE -> {
                             item.status =
-                                if (extractZipEntry(sourceZip, sourceHolder, destinationFile)) {
+                                if (extractZipEntry(sourceZip, sourceHolder, destinationFile, item)) {
                                     TaskContentStatus.SUCCESS
                                 } else {
                                     TaskContentStatus.FAILED
@@ -625,9 +612,12 @@ class CopyTask(
                         else -> { /* Already handled */
                         }
                     }
+                    item.copied = item.copied || item.status == TaskContentStatus.SUCCESS
+                    checkpointItem(item)
                 }
             }
-        } catch (e: Exception) {
+        } catch (e: java.util.concurrent.CancellationException) { throw e }
+        catch (e: Exception) {
             throw RuntimeException(
                 globalClass.getString(R.string.failed_to_extract_files_from_zip),
                 e
@@ -635,28 +625,24 @@ class CopyTask(
         }
     }
 
-    private fun extractZipEntry(
-        sourceZip: ZipFile,
-        sourceHolder: ZipFileHolder,
-        destinationFile: File
-    ): Boolean {
+    private fun extractZipEntry(sourceZip: ZipFile, sourceHolder: ZipFileHolder, destinationFile: File, item: TaskContentItem): Boolean {
         return try {
+            val root = (parameters!!.destHolder as LocalFileHolder).file
             if (sourceHolder.isFile()) {
-                destinationFile.parentFile?.mkdirs()
-                sourceZip.getInputStream(sourceZip.getFileHeader(sourceHolder.node.path))
-                    .use { input ->
-                        destinationFile.outputStream().use { output ->
-                            input.copyTo(output)
-                        }
-                    }
-            } else {
-                destinationFile.mkdirs()
-            }
+                val header = requireNotNull(sourceZip.getFileHeader(sourceHolder.node.path)) { "Archive entry missing" }
+                val remaining = com.nixplorer.screen.main.tab.files.zip.ArchiveSafety.MAX_TOTAL_BYTES - extractionBytes
+                val baseProgress = progressMonitor.progress
+                val bytes = SafeFileOperations.stagedStream(root, item.relativePath, item.status == TaskContentStatus.REPLACE,
+                    minOf(remaining, com.nixplorer.screen.main.tab.files.zip.ArchiveSafety.MAX_ENTRY_BYTES),
+                    { aborted || activeJob?.isActive == false }, expectedBytes = header.uncompressedSize,
+                    operationId = id, onProgress = { bytes -> progressMonitor.progress = baseProgress +
+                        (bytes.toFloat() / maxOf(1L, header.uncompressedSize)).coerceAtMost(1f) * 0.9f / pendingFiles.size },
+                    input = { sourceZip.getInputStream(header) })
+                extractionBytes += bytes
+            } else SafeFileOperations.directory(SafeFileOperations.contained(root, item.relativePath))
             true
-        } catch (e: Exception) {
-            logger.logError(e)
-            false
-        }
+        } catch (e: java.util.concurrent.CancellationException) { throw e }
+        catch (e: Exception) { logger.logError(e); item.error = e.message; false }
     }
 
     private fun copyZipFilesToZip(sourcePath: String, destinationHolder: ZipFileHolder) {
@@ -680,7 +666,7 @@ class CopyTask(
                 ZipFile(destFile).use { destZip ->
                     pendingFiles.forEachIndexed { index, item ->
                         if (aborted) {
-                            progressMonitor.status = TaskStatus.PAUSED
+                            progressMonitor.status = TaskStatus.CANCELLED
                             return
                         }
 
@@ -702,20 +688,11 @@ class CopyTask(
                             createZipEntryPath(destinationHolder.node.path, item.relativePath)
 
                         if (item.status == TaskContentStatus.PENDING) {
-                            val existingHeader = destZip.getFileHeader(targetPath)
+                            val existingHeader = ZipFile(destinationHolder.zipTree.source.file).use { it.getFileHeader(targetPath) }
                             val conflictExists =
                                 existingHeader != null && !existingHeader.isDirectory
                             if (conflictExists && !handleConflict(item)) {
                                 return
-                            }
-                        }
-
-                        // Remove existing file if replacing
-                        if (item.status == TaskContentStatus.REPLACE) {
-                            try {
-                                destZip.removeFile(targetPath)
-                            } catch (e: Exception) {
-                                logger.logError(e) // Log but continue
                             }
                         }
 
@@ -732,10 +709,13 @@ class CopyTask(
                             else -> { /* Already handled */
                             }
                         }
+                        item.copied = item.copied || item.status == TaskContentStatus.SUCCESS
+                        checkpointItem(item)
                     }
                 }
             }
-        } catch (e: Exception) {
+        } catch (e: java.util.concurrent.CancellationException) { throw e }
+        catch (e: Exception) {
             throw RuntimeException(globalClass.getString(R.string.failed_to_copy_zip_entries), e)
         }
     }
@@ -750,30 +730,39 @@ class CopyTask(
             val sourceHolder = item.content as ZipFileHolder
             val params = ZipParameters().apply {
                 fileNameInZip = if (sourceHolder.isFile()) targetPath else "$targetPath/"
-                isOverrideExistingFilesInZip = true
+                isOverrideExistingFilesInZip = item.status == TaskContentStatus.REPLACE
             }
 
             if (sourceHolder.isFile()) {
                 sourceZip.getInputStream(sourceZip.getFileHeader(sourceHolder.node.path))
                     .use { input ->
-                        destZip.addStream(input, params)
+                        com.nixplorer.screen.main.tab.files.zip.ArchiveEdits.update(destZip.file, { aborted || activeJob?.isActive == false }, id) { stage ->
+                            ZipFile(stage).use { stagedZip ->
+                                require(item.status == TaskContentStatus.REPLACE || stagedZip.getFileHeader(targetPath) == null) { "Archive destination appeared during copying; retry to resolve conflict" }
+                                stagedZip.addStream(input, params)
+                            }
+                        }
                     }
             } else {
-                destZip.addStream(ByteArrayInputStream(ByteArray(0)), params)
+                com.nixplorer.screen.main.tab.files.zip.ArchiveEdits.update(destZip.file, { aborted || activeJob?.isActive == false }, id) { stage ->
+                    ZipFile(stage).use { it.addStream(ByteArrayInputStream(ByteArray(0)), params) }
+                }
             }
             true
-        } catch (e: Exception) {
+        } catch (e: java.util.concurrent.CancellationException) { throw e }
+        catch (e: Exception) {
             logger.logError(e)
+            item.error = e.message ?: "Operation failed"
             false
         }
     }
 
     private fun createZipEntryPath(basePath: String, relativePath: String): String {
-        return if (basePath.isEmpty()) {
+        return SafeFileOperations.relativePath(if (basePath.isEmpty()) {
             relativePath
         } else {
-            "$basePath${File.separator}$relativePath"
-        }
+            "$basePath/$relativePath"
+        })
     }
 
     private fun listFilesWithRelativePath(
@@ -792,14 +781,21 @@ class CopyTask(
 
         return when (startFile) {
             is LocalFileHolder -> {
-                startFile.file.listFilesAndEmptyDirs().map { file ->
-                    TaskContentItem(
-                        content = LocalFileHolder(file),
-                        relativePath = file.toRelativeString(File(basePath))
-                            .orIf(startFile.displayName) { it.isEmpty() },
-                        status = TaskContentStatus.PENDING
-                    )
+                val items = mutableListOf<TaskContentItem>()
+                SafeFileOperations.walk(startFile.file, { aborted || activeJob?.isActive == false },
+                    onDirectory = { directory ->
+                        if (directory !in sourceDirectories) {
+                            sourceDirectories[directory] = SafeFileOperations.directoryIdentity(directory)
+                            sourceDirectoryCharacters += directory.path.length
+                        }
+                    }) { file ->
+                    items.add(TaskContentItem(content = LocalFileHolder(file),
+                        relativePath = file.toRelativeString(startFile.file.parentFile ?: startFile.file).orIf(startFile.displayName) { it.isEmpty() },
+                        status = TaskContentStatus.PENDING))
+                    progressMonitor.contentName = file.name
+                    progressMonitor.totalContent = items.size
                 }
+                items
             }
 
             is ZipFileHolder -> {
@@ -813,7 +809,7 @@ class CopyTask(
                 }
             }
 
-            else -> emptyList()
+            else -> throw IllegalArgumentException("Unsupported provider operation")
         }
     }
 }
