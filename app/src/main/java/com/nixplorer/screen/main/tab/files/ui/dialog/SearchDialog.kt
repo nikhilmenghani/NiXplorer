@@ -6,6 +6,12 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.material.icons.rounded.Info
+import com.nixplorer.common.ui.BottomSheetDialog
+import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
@@ -67,6 +73,9 @@ import androidx.compose.ui.platform.LocalWindowInfo
 import kotlinx.coroutines.flow.first
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.launch
+import com.nixplorer.screen.main.tab.files.search.SmartSearchModel
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -104,7 +113,8 @@ import com.nixplorer.screen.main.tab.files.ui.FileItemRow
 fun SearchDialog(
     show: Boolean,
     tab: FilesTab,
-    onDismissRequest: () -> Unit
+    onDismissRequest: () -> Unit,
+    asPage: Boolean = false
 ) {
     val searchManager = globalClass.searchManager
 
@@ -112,20 +122,14 @@ fun SearchDialog(
         val context = LocalContext.current
         val useDarkIcons = !isSystemInDarkTheme()
         var showAdvancedOptions by remember { mutableStateOf(false) }
+        var showSearchInfo by remember { mutableStateOf(false) }
         val searchLocation = if (tab.activeFolder is VirtualFileHolder)
             tab.activeFolder.displayName else tab.activeFolder.uniquePath
         var locationExpanded by remember(searchLocation) { mutableStateOf(false) }
 
-        Dialog(
-            onDismissRequest = onDismissRequest,
-            properties = DialogProperties(
-                dismissOnClickOutside = false,
-                decorFitsSystemWindows = false,
-                usePlatformDefaultWidth = false
-            )
-        ) {
+        val content: @Composable () -> Unit = {
             // Status bar color fix
-            val color = MaterialTheme.colorScheme.surfaceContainerHigh
+            val color = if (asPage) MaterialTheme.colorScheme.surfaceContainerLowest else MaterialTheme.colorScheme.surfaceContainerHigh
             val systemUiController = rememberSystemUiController()
             DisposableEffect(systemUiController, useDarkIcons) {
                 systemUiController.setStatusBarColor(color = color, darkIcons = useDarkIcons)
@@ -136,11 +140,13 @@ fun SearchDialog(
                 modifier = Modifier
                     .fillMaxSize()
                     .imePadding()
-                    .statusBarsPadding()
+                    .then(if (asPage) Modifier else Modifier.statusBarsPadding())
                     .background(
-                        MaterialTheme.colorScheme.surfaceContainerHigh,
+                        color,
                         RoundedCornerShape(0.dp)
                     )
+                    .then(if (asPage) Modifier.padding(horizontal = 12.dp, vertical = 8.dp) else Modifier),
+                verticalArrangement = Arrangement.spacedBy(if (asPage) 8.dp else 0.dp)
             ) {
                 // Search Header
                 SearchHeader(
@@ -156,12 +162,21 @@ fun SearchDialog(
                         }
                         searchManager.startSearch(tab)
                     },
-                    onAdvancedToggle = { showAdvancedOptions = !showAdvancedOptions }
+                    onAdvancedToggle = { showAdvancedOptions = !showAdvancedOptions },
+                    asPage = asPage,
+                    onInfoClick = if (asPage) ({ showSearchInfo = true }) else null
                 )
+
+                if (!asPage) Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text(stringResource(R.string.smart_search), modifier = Modifier.weight(1f), style = MaterialTheme.typography.titleSmall)
+                    Switch(checked = searchManager.searchOptions.smartSearch, enabled = !searchManager.isSearching,
+                        onCheckedChange = { searchManager.searchOptions = searchManager.searchOptions.copy(smartSearch = it) })
+                }
+                if (!asPage && searchManager.searchOptions.smartSearch) SmartSearchPanel(searchManager, asPage)
 
                 // Advanced Options
                 AnimatedVisibility(
-                    visible = showAdvancedOptions,
+                    visible = showAdvancedOptions && !searchManager.searchOptions.smartSearch,
                     enter = expandVertically() + fadeIn(),
                     exit = shrinkVertically() + fadeOut()
                 ) {
@@ -182,6 +197,8 @@ fun SearchDialog(
 
                 // Results Section
                 SearchResultsSection(
+                    modifier = if (asPage) Modifier.weight(1f, fill = false) else Modifier,
+                    asPage = asPage,
                     searchManager = searchManager,
                     tab = tab,
                     context = context,
@@ -192,6 +209,78 @@ fun SearchDialog(
                     onDismissRequest = onDismissRequest
                 )
             }
+        }
+        if (asPage) content() else Dialog(
+            onDismissRequest = onDismissRequest,
+            properties = DialogProperties(dismissOnClickOutside = false,
+                decorFitsSystemWindows = false, usePlatformDefaultWidth = false)
+        ) { content() }
+        if (asPage && showSearchInfo) {
+            BottomSheetDialog(onDismissRequest = { showSearchInfo = false }, skipPartiallyExpanded = true) {
+                Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text(stringResource(R.string.ai_search_info), style = MaterialTheme.typography.titleMedium)
+                    Column(Modifier.fillMaxWidth().block(shape = RoundedCornerShape(12.dp),
+                        color = MaterialTheme.colorScheme.surfaceContainerLow).padding(12.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Text(stringResource(R.string.search_location_label), style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        SearchLocationPath(searchLocation, expanded = true, compact = true)
+                    }
+                    SmartSearchPanel(searchManager, asPage = true)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SmartSearchPanel(searchManager: SearchManager, asPage: Boolean = false) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var expanded by remember { mutableStateOf(false) }
+    val status = SmartSearchModel.status
+    val ready = SmartSearchModel.isDownloaded(context)
+    Column(
+        Modifier.then(if (asPage) Modifier else Modifier.padding(horizontal = 12.dp, vertical = 4.dp)).fillMaxWidth()
+            .block(shape = RoundedCornerShape(12.dp), color = MaterialTheme.colorScheme.surfaceContainerLow,
+                borderSize = 0.5.dp, borderColor = MaterialTheme.colorScheme.surfaceContainerHighest)
+            .padding(if (asPage) 10.dp else 12.dp)
+    ) {
+        Text(stringResource(R.string.smart_search_examples), style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            if (ready) {
+                Text(stringResource(R.string.smart_model_ready), style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
+            } else {
+                TextButton(enabled = !SmartSearchModel.downloading && !searchManager.isSearching,
+                    onClick = { scope.launch {
+                        try { SmartSearchModel.download(context) }
+                        catch (e: kotlinx.coroutines.CancellationException) { throw e }
+                        catch (e: Exception) { globalClass.showMsg(e.message ?: "Model download failed") }
+                    } }) { Text(stringResource(R.string.smart_download_model)) }
+                Spacer(Modifier.weight(1f))
+            }
+            TextButton(onClick = { expanded = !expanded }) {
+                Text(stringResource(if (expanded) R.string.smart_less_details else R.string.smart_details))
+            }
+        }
+        if (SmartSearchModel.downloading || !ready && status.isNotEmpty()) {
+            Text(status, style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        if (expanded) {
+            Text(stringResource(R.string.smart_search_help), style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant)
+            if (ready) TextButton(enabled = !searchManager.isSearching, onClick = { scope.launch {
+                try { SmartSearchModel.remove(context) }
+                catch (e: kotlinx.coroutines.CancellationException) { throw e }
+                catch (e: Exception) { globalClass.showMsg(e.message ?: "Unable to remove model") }
+            } }) { Text(stringResource(R.string.smart_remove_model)) }
+        }
+        searchManager.interpretedQuery?.let {
+            Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
         }
     }
 }
@@ -204,7 +293,9 @@ private fun SearchHeader(
     onLocationToggle: () -> Unit,
     onBackClick: () -> Unit,
     onSearchClick: () -> Unit,
-    onAdvancedToggle: () -> Unit
+    onAdvancedToggle: () -> Unit,
+    asPage: Boolean = false,
+    onInfoClick: (() -> Unit)? = null
 ) {
     val focusRequester = remember { FocusRequester() }
     val keyboardController = LocalSoftwareKeyboardController.current
@@ -221,10 +312,11 @@ private fun SearchHeader(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(12.dp)
+                .padding(if (asPage) PaddingValues(0.dp) else PaddingValues(12.dp))
                 .block(
-                    borderSize = 0.dp,
-                    shape = CircleShape,
+                    borderSize = if (asPage) 0.5.dp else 0.dp,
+                    borderColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+                    shape = if (asPage) RoundedCornerShape(12.dp) else CircleShape,
                     color = MaterialTheme.colorScheme.surfaceContainerLow
                 ),
             verticalAlignment = Alignment.CenterVertically
@@ -244,12 +336,12 @@ private fun SearchHeader(
                 ),
                 placeholder = {
                     Text(
-                        text = stringResource(R.string.search_query),
+                        text = stringResource(if (searchManager.searchOptions.smartSearch) R.string.smart_query_hint else R.string.search_query),
                         color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
                     )
                 },
                 leadingIcon = {
-                    IconButton(onClick = onBackClick) {
+                    IconButton(onClick = { keyboardController?.hide(); onBackClick() }) {
                         Icon(
                             imageVector = Icons.AutoMirrored.Rounded.ArrowBack,
                             contentDescription = null,
@@ -273,21 +365,27 @@ private fun SearchHeader(
                                 )
                             }
                         } else {
-                            IconButton(onClick = onSearchClick) {
+                            IconButton(onClick = { keyboardController?.hide(); onSearchClick() }) {
                                 Icon(
                                     imageVector = Icons.Rounded.Search,
                                     contentDescription = null,
                                 )
                             }
                         }
+                        if (onInfoClick != null) IconButton(onClick = {
+                            keyboardController?.hide()
+                            onInfoClick()
+                        }) {
+                            Icon(Icons.Rounded.Info, contentDescription = stringResource(R.string.ai_search_info))
+                        }
                     }
                 },
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-                keyboardActions = KeyboardActions(onSearch = { onSearchClick() }),
+                keyboardActions = KeyboardActions(onSearch = { keyboardController?.hide(); onSearchClick() }),
                 singleLine = true,
             )
 
-            IconButton(onClick = onAdvancedToggle) {
+            if (!searchManager.searchOptions.smartSearch) IconButton(onClick = onAdvancedToggle) {
                 Icon(
                     imageVector = Icons.Rounded.Tune,
                     contentDescription = null,
@@ -301,10 +399,10 @@ private fun SearchHeader(
         } else {
             searchLocation.split('/').filter { it.isNotEmpty() }
         }
-        Surface(
+        if (!asPage) Surface(
             onClick = onLocationToggle,
-            modifier = Modifier.fillMaxWidth().padding(start = 12.dp, end = 12.dp, bottom = 8.dp),
-            shape = RoundedCornerShape(20.dp),
+            modifier = Modifier.fillMaxWidth().then(if (asPage) Modifier else Modifier.padding(start = 12.dp, end = 12.dp, bottom = 8.dp)),
+            shape = RoundedCornerShape(if (asPage) 12.dp else 20.dp),
             color = MaterialTheme.colorScheme.surfaceContainerLow
         ) {
             Row(
@@ -329,8 +427,9 @@ private fun SearchHeader(
                     )
                     SearchLocationPath(
                         path = if (locationExpanded) searchLocation
-                            else locationParts.joinToString("  ›  ").ifEmpty { searchLocation },
-                        expanded = locationExpanded
+                            else locationParts.joinToString("  \u203a  ").ifEmpty { searchLocation },
+                        expanded = locationExpanded,
+                        compact = asPage
                     )
                 }
                 Icon(
@@ -346,7 +445,7 @@ private fun SearchHeader(
 }
 
 @Composable
-private fun SearchLocationPath(path: String, expanded: Boolean) {
+private fun SearchLocationPath(path: String, expanded: Boolean, compact: Boolean = false) {
     val textMeasurer = rememberTextMeasurer()
     val style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium)
     BoxWithConstraints(Modifier.fillMaxWidth()) {
@@ -367,17 +466,17 @@ private fun SearchLocationPath(path: String, expanded: Boolean) {
                 var high = path.length
                 while (low < high) {
                     val middle = (low + high) / 2
-                    if (fits("… " + path.substring(middle))) high = middle
+                    if (fits("\u2026 " + path.substring(middle))) high = middle
                     else low = middle + 1
                 }
-                "… " + path.substring(low)
+                "\u2026 " + path.substring(low)
             }
         }
         Text(
             text = displayPath,
             style = style,
             color = MaterialTheme.colorScheme.onSurface,
-            minLines = 2,
+            minLines = if (compact) 1 else 2,
             maxLines = if (expanded) Int.MAX_VALUE else 2,
             overflow = TextOverflow.Clip
         )
@@ -622,20 +721,25 @@ private fun SearchResultsSection(
     tab: FilesTab,
     context: android.content.Context,
     onExpandClick: () -> Unit,
-    onDismissRequest: () -> Unit
+    onDismissRequest: () -> Unit,
+    asPage: Boolean = false,
+    modifier: Modifier = Modifier
 ) {
     Column(
-        modifier = Modifier
-            .fillMaxSize()
+        modifier = modifier
+            .then(if (asPage) Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp))
+                .border(0.5.dp, MaterialTheme.colorScheme.surfaceContainerHighest, RoundedCornerShape(12.dp))
+                else Modifier.fillMaxSize())
             .background(MaterialTheme.colorScheme.surfaceContainerLow)
     ) {
         // Results Header
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .background(color = MaterialTheme.colorScheme.surfaceContainerHigh)
-                .padding(bottom = if (searchManager.searchResults.isEmpty()) 12.dp else 8.dp)
-                .padding(horizontal = 16.dp),
+                .background(color = if (asPage) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHigh)
+                .padding(vertical = if (asPage) 10.dp else 0.dp)
+                .padding(bottom = if (asPage) 0.dp else if (searchManager.searchResults.isEmpty()) 12.dp else 8.dp)
+                .padding(horizontal = if (asPage) 12.dp else 16.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(
@@ -665,6 +769,13 @@ private fun SearchResultsSection(
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
         }
 
+        if (asPage && searchManager.searchResults.isEmpty()) {
+            Text(stringResource(R.string.ai_search_empty_hint),
+                modifier = Modifier.padding(start = 12.dp, end = 12.dp, bottom = 12.dp),
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            return@Column
+        }
+
         // Results List
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
@@ -677,7 +788,11 @@ private fun SearchResultsSection(
                 SearchResultItem(
                     searchResult = searchResult,
                     onItemClick = {
-                        if (searchResult.file.isFile()) {
+                        if (tab.aiSearchPage) {
+                            val destination = FilesTab(searchResult.file)
+                            globalClass.mainActivityManager.addTabAndSelect(destination)
+                            if (searchResult.file.isFile()) destination.openFile(context, searchResult.file)
+                        } else if (searchResult.file.isFile()) {
                             tab.openFile(context, searchResult.file)
                         } else {
                             tab.openFolder(searchResult.file, rememberListState = false)
@@ -736,7 +851,8 @@ private fun SearchResultItem(
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Text(
-                        text = stringResource(R.string.line, searchResult.lineNumber!!),
+                        text = if (searchResult.lineNumber != null) stringResource(R.string.line, searchResult.lineNumber)
+                            else stringResource(R.string.smart_related_content),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.primary,
                         modifier = Modifier.padding(8.dp)

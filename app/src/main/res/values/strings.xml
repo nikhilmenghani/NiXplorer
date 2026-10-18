@@ -524,7 +524,6 @@
         <item quantity="one">%1$d file</item>
         <item quantity="other">%1$d files</item>
     </plurals>
-    <string name="experimental_storage">Experimental storage analyzer</string>
     <string name="storage_large_videos">Large video files</string>
     <string name="storage_large_images">Large images</string>
     <string name="storage_large_documents">Large documents</string>
@@ -572,4 +571,23 @@
     <string name="apps_toggle_sort_order">Reverse sort order</string>
     <string name="apk_reinstall">Re-install</string>
     <string name="apk_downgrade">Downgrade</string>
+    <string name="smart_search">Smart search · on device</string>
+    <string name="smart_query_hint">Try: PDFs about taxes</string>
+    <string name="smart_search_help">English queries: videos over 100 MB, PDFs from last week, or documents about taxes. Filters work without a model. Meaning search uses MiniLM (Apache 2.0); files stay on this device. Content: text, config, PDF and DOCX, up to 20 MiB each; first 5,600 characters / 5 PDF pages; 500 documents per search. Scans, encrypted PDFs and other formats are not read. Results may miss relevant files.</string>
+    <string name="smart_download_model">Download model · 23 MB</string>
+    <string name="smart_remove_model">Remove offline model</string>
+    <string name="smart_related_content">Related content</string>
+    <string name="smart_search_examples">Try: videos over 100 MB · PDFs from last week · documents about taxes</string>
+    <string name="smart_details">Search options</string>
+    <string name="smart_less_details">Hide details</string>
+    <string name="ai_search">AI Search</string>
+    <string name="ai_search_description">Find files using natural language</string>
+    <string name="smart_model_ready">On-device model ready</string>
+    <string name="ai_search_empty_hint">Matching files will appear here.</string>
+    <string name="ai_search_info">About this search</string>
+    <string name="open_containing_folder">Open containing folder</string>
+    <string name="hide_from_gallery">Hide from gallery</string>
+    <string name="show_in_gallery">Show in gallery</string>
+    <string name="gallery_visibility_updated">Updated. Your gallery may take time to refresh; parent folder visibility still applies.</string>
+    <string name="gallery_visibility_failed">Could not update .nomedia. Check folder access and make sure .nomedia is a regular file.</string>
 </resources>

@@ -147,7 +147,7 @@ class MainActivityManager {
                     is ZipFileHolder -> ZipFileHolder(active.zipTree, active.node)
                     else -> active
                 }
-                FilesTab(folder).apply { viewConfig = original.viewConfig.copy() }
+                FilesTab(folder, aiSearchPage = original.aiSearchPage).apply { viewConfig = original.viewConfig.copy() }
             }
             else -> return
         }
@@ -383,7 +383,7 @@ class MainActivityManager {
                 is FilesTab -> {
                     startupTabs.add(
                         StartupTab(
-                            type = StartupTabType.FILES,
+                            type = if (tab.aiSearchPage) StartupTabType.AI_SEARCH else StartupTabType.FILES,
                             extra = tab.activeFolder.uniquePath
                         )
                     )
@@ -424,6 +424,7 @@ class MainActivityManager {
             startupTabs.tabs.forEachIndexed { _, tab ->
                 val newTab = when (tab.type) {
                     StartupTabType.FILES -> FilesTab(LocalFileHolder(File(tab.extra)))
+                    StartupTabType.AI_SEARCH -> FilesTab(LocalFileHolder(android.os.Environment.getExternalStorageDirectory()), aiSearchPage = true)
                     StartupTabType.APPS -> AppsTab()
                     else -> HomeTab()
                 }

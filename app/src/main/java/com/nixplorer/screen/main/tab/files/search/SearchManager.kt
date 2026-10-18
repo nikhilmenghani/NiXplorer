@@ -33,6 +33,12 @@ import java.util.regex.PatternSyntaxException
 class SearchManager {
     var searchQuery by mutableStateOf(emptyString)
     var searchOptions by mutableStateOf(SearchOptions())
+    var interpretedQuery by mutableStateOf<String?>(null)
+        private set
+    private var smartPlan: SmartQuery? = null
+    private var semanticQuery: FloatArray? = null
+    private var semanticRequiredTerms: List<String> = emptyList()
+    private var semanticCandidates = 0
     var isSearching by mutableStateOf(false)
     var searchProgress by mutableFloatStateOf(0f)
     var currentSearchingFile by mutableStateOf(emptyString)
@@ -63,6 +69,24 @@ class SearchManager {
             return
         }
 
+        if (isSearching) stopSearch()
+        interpretedQuery = null
+        smartPlan = null
+        semanticQuery = null
+        semanticRequiredTerms = emptyList()
+        val queryForThisSearch = searchQuery
+        semanticCandidates = 0
+        if (searchOptions.smartSearch) {
+            clearResults()
+            try {
+                smartPlan = SmartQueryParser.parse(searchQuery)
+                interpretedQuery = smartPlan!!.summary
+                if (smartPlan!!.topic != null && !SmartSearchModel.isDownloaded(globalClass)) {
+                    globalClass.showMsg("Download the offline model to search by meaning")
+                    return
+                }
+            } catch (e: IllegalArgumentException) { interpretedQuery = e.message; return }
+        }
         val session = ++searchGeneration
         searchJob?.cancel()
         uiUpdateJob?.cancel()
@@ -85,9 +109,14 @@ class SearchManager {
 
         searchJob = tab.scope.launch {
             try {
-                val searchPattern = compileSearchPattern(
+                val searchPattern = if (smartPlan != null) null else compileSearchPattern(
                     searchQuery, searchOptions.useRegex, searchOptions.ignoreCase
                 )
+                smartPlan?.topic?.let {
+                    semanticQuery = SmartSearchModel.embed(globalClass, it)
+                    semanticRequiredTerms = SmartSearchModel.requiredTerms(globalClass, queryForThisSearch)
+                    if (semanticRequiredTerms.isNotEmpty()) interpretedQuery = "${smartPlan!!.summary}; Required name: ${semanticRequiredTerms.joinToString() }"
+                }
 
                 if (tab.activeFolder is VirtualFileHolder) {
                     searchInList(tab.activeFolderContent, searchPattern)
@@ -109,6 +138,7 @@ class SearchManager {
                 logger.logError(e)
                 if (session == searchGeneration) incompleteReason = "Incomplete results: ${e.message}"
             } finally {
+                if (smartPlan?.topic != null) SmartSearchModel.release()
                 if (session == searchGeneration) {
                 isSearching = false
                 uiUpdateJob?.cancel()
@@ -150,6 +180,7 @@ class SearchManager {
         // Add them all at once to minimize recomposition
         if (resultsToAdd.isNotEmpty()) {
             searchResults.addAll(resultsToAdd)
+            if (smartPlan?.topic != null) searchResults.sortByDescending { it.semanticScore ?: 0f }
         }
     }
 
@@ -246,6 +277,31 @@ class SearchManager {
     ) {
         currentCoroutineContext().ensureActive()
         if (!isSearching) return
+
+        smartPlan?.let { plan ->
+            if (!plan.matches(item.displayName, item.extension, item.isFolder, item.size, item.lastModified)) return
+            if (plan.topic == null) {
+                addSearchResult(SearchResult(item, SearchResult.MatchType.FILENAME))
+            } else {
+                val requiredTerms = semanticRequiredTerms
+                if (item.displayName.contains(plan.topic, true) || requiredTerms.isNotEmpty() &&
+                    SearchRelevance.containsRequired(item.displayName, requiredTerms)) {
+                    addSearchResult(SearchResult(item, SearchResult.MatchType.FILENAME, semanticScore = 1f))
+                } else if (item.isFile() && item is LocalFileHolder && SmartDocumentSearch.supports(item.file)) {
+                    if (++semanticCandidates > 500) throw SearchLimitReached()
+                    try {
+                        val match = SmartDocumentSearch.match(globalClass, item.file, requireNotNull(semanticQuery), requiredTerms)
+                        if (match != null) addSearchResult(SearchResult(item, SearchResult.MatchType.CONTENT,
+                            matchedLine = match.snippet, semanticScore = match.score))
+                    } catch (e: CancellationException) { throw e }
+                    catch (e: Exception) {
+                        logger.logError(e)
+                        incompleteReason = "Could not read ${item.displayName}. Other files were searched; try opening this document separately."
+                    }
+                }
+            }
+            return
+        }
 
         // Search by extension
         if (searchOptions.searchByExtension) {

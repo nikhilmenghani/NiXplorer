@@ -24,6 +24,8 @@ class OperationSafetyInstrumentation : Instrumentation() {
     private var phase: String? = null
     override fun onCreate(arguments: Bundle?) { phase = arguments?.getString("phase"); super.onCreate(arguments); start() }
     override fun onStart() {
+        if (phase == "smartSearchDeviceQuery") { smartSearchDeviceQuery(); return }
+        if (phase == "smartSearch") { smartSearch(); return }
         if (phase == "appUsage") { appUsage(); return }
         if (phase == "appsLoading") { appsLoading(); return }
         if (phase == "prepareRecovery") { prepareRecovery(); return }
@@ -81,6 +83,132 @@ class OperationSafetyInstrumentation : Instrumentation() {
         check(copied.readText() == "changed after successful copy")
         check(File(destination, "missing").readText() == "retry me")
     }
+    /** Read-only reproduction of the query reported by the device owner; no document text is exported. */
+    private fun smartSearchDeviceQuery() {
+        val manager = com.nixplorer.screen.main.tab.files.search.SearchManager()
+        val tab = com.nixplorer.screen.main.tab.files.FilesTab(LocalFileHolder(android.os.Environment.getExternalStorageDirectory()))
+        try {
+            runBlocking {
+                manager.searchOptions = com.nixplorer.screen.main.tab.files.search.SearchOptions(smartSearch = true)
+                manager.searchQuery = "pdf about taxes"
+                manager.startSearch(tab)
+                withTimeout(180000) { while (manager.isSearching) delay(250) }
+                check(manager.incompleteReason == null) { manager.incompleteReason.orEmpty() }
+                check(manager.searchResults.isNotEmpty()) { "No results returned for the reported query" }
+                finish(Activity.RESULT_OK, Bundle().apply { putString("stream", "PASS reported query: ${manager.searchResults.size} results; no incomplete-results warning; no document contents exported.\n") })
+            }
+        } catch (error: Throwable) {
+            finish(Activity.RESULT_CANCELED, Bundle().apply { putString("stream", "FAILED: ${error.stackTraceToString()}") })
+        } finally { manager.stopSearch(); tab.scope.cancel() }
+    }
+
+    private fun smartSearch() {
+        val directory = File(targetContext.cacheDir, "smart-search-qa-${UUID.randomUUID()}").apply { check(mkdirs()) }
+        try {
+            runBlocking {
+                val model = com.nixplorer.screen.main.tab.files.search.SmartSearchModel
+                model.download(targetContext)
+                val query = model.embed(targetContext, "income tax return")
+                check(query.size == 384 && query.all { it.isFinite() })
+                val tax = File(directory, "report.txt").apply { writeText("Annual income statement. Federal revenue filing, taxable earnings, deductions and refund. Submit your income tax return to the revenue agency.") }
+                val cake = File(directory, "notes.txt").apply { writeText("Chocolate cake recipe. Mix flour, sugar, butter and milk. Bake the cake in the oven and decorate with icing.") }
+                val relevant = com.nixplorer.screen.main.tab.files.search.SmartDocumentSearch.match(targetContext, tax, query)
+                val irrelevant = com.nixplorer.screen.main.tab.files.search.SmartDocumentSearch.match(targetContext, cake, query)
+                check(relevant != null && relevant.score > (irrelevant?.score ?: -1f)) { "Semantic relevance failed: $relevant / $irrelevant" }
+                val config = File(directory, "settings.config").apply { writeText("Annual income tax filing and allowable deductions.") }
+                val docx = File(directory, "statement.docx")
+                ZipOutputStream(docx.outputStream()).use { out ->
+                    out.putNextEntry(ZipEntry("word/document.xml"))
+                    out.write("<document><p>Federal income tax return and deductible expenses.</p></document>".toByteArray()); out.closeEntry()
+                }
+                check(com.nixplorer.screen.main.tab.files.search.SmartDocumentSearch.readText(targetContext, docx).contains("deductible"))
+                check(com.nixplorer.screen.main.tab.files.search.SmartDocumentSearch.readText(targetContext, config).contains("deductions"))
+                com.tom_roush.pdfbox.android.PDFBoxResourceLoader.init(targetContext)
+                val pdf = File(directory, "statement.pdf")
+                com.tom_roush.pdfbox.pdmodel.PDDocument().use { document ->
+                    val page = com.tom_roush.pdfbox.pdmodel.PDPage(); document.addPage(page)
+                    com.tom_roush.pdfbox.pdmodel.PDPageContentStream(document, page).use { content ->
+                        content.beginText(); content.setFont(com.tom_roush.pdfbox.pdmodel.font.PDType1Font.HELVETICA, 12f)
+                        content.newLineAtOffset(30f, 700f); content.showText("Federal income tax return, income deductions and revenue filing."); content.endText()
+                    }
+                    document.save(pdf)
+                }
+                check(com.nixplorer.screen.main.tab.files.search.SmartDocumentSearch.readText(targetContext, pdf).contains("revenue"))
+                if (android.os.Build.VERSION.SDK_INT >= 35) {
+                    val malformed = File(directory, "malformed-number.pdf")
+                    val text = "BT /F1 12 Tf 30 700 Td (Federal income tax revenue filing.) Tj ET"
+                    val objects = listOf(
+                        "<< /Type /Catalog /Pages 2 0 R >>",
+                        "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+                        "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>",
+                        "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /FontDescriptor 6 0 R >>",
+                        "<< /Length ${text.length} >>\nstream\n$text\nendstream",
+                        "<< /Type /FontDescriptor /FontName /Helvetica /Flags 32 /FontBBox [0 -17.-32768 1000 1000] /ItalicAngle 0 /Ascent 800 /Descent -200 /CapHeight 700 /StemV 80 >>"
+                    )
+                    val bytes = java.io.ByteArrayOutputStream()
+                    fun append(value: String) { bytes.write(value.toByteArray(Charsets.ISO_8859_1)) }
+                    append("%PDF-1.4\n")
+                    val offsets = objects.mapIndexed { index, value ->
+                        val offset = bytes.size(); append("${index + 1} 0 obj\n$value\nendobj\n"); offset
+                    }
+                    val xref = bytes.size()
+                    append("xref\n0 7\n0000000000 65535 f \n")
+                    offsets.forEach { append("%010d 00000 n \n".format(it)) }
+                    append("trailer\n<< /Size 7 /Root 1 0 R >>\nstartxref\n$xref\n%%EOF\n")
+                    malformed.writeBytes(bytes.toByteArray())
+                    check(runCatching {
+                        com.tom_roush.pdfbox.pdmodel.PDDocument.load(malformed).use {
+                            com.tom_roush.pdfbox.text.PDFTextStripper().getText(it)
+                        }
+                    }.isFailure) { "Malformed-number fixture did not reproduce the legacy parser error" }
+                    check(com.nixplorer.screen.main.tab.files.search.SmartDocumentSearch.readText(targetContext, malformed).contains("revenue")) {
+                        "Malformed PDF number prevented valid text extraction"
+                    }
+                }
+                val manager = com.nixplorer.screen.main.tab.files.search.SearchManager()
+                val tab = com.nixplorer.screen.main.tab.files.FilesTab(LocalFileHolder(directory))
+                try {
+                    manager.searchOptions = com.nixplorer.screen.main.tab.files.search.SearchOptions(smartSearch = true)
+                    manager.searchQuery = "documents about income tax"
+                    manager.startSearch(tab)
+                    withTimeout(60000) { while (manager.isSearching) delay(20) }
+                    val names = manager.searchResults.map { it.file.displayName }
+                    check("report.txt" in names && "statement.pdf" in names && "statement.docx" in names && "settings.config" in names && "notes.txt" !in names) { "Content search results: $names; ${manager.incompleteReason}" }
+                    check(manager.searchResults.any { it.matchedLine != null && it.lineNumber == null })
+                    File(directory, "project-notes.txt").writeText("NikGapps is an Android application for managing NikGapps builds and projects.")
+                    File(directory, "phone-apps.txt").writeText("Android application settings, mobile software, privacy and battery usage for installed apps.")
+                    File(directory, "NikGapps-dev.apk").writeText("Disposable name-only search fixture; not an installable APK")
+                    for (brandQuery in listOf("NikGapps app", "nikgapps app")) {
+                        manager.searchQuery = brandQuery
+                        manager.startSearch(tab)
+                        withTimeout(60000) { while (manager.isSearching) delay(20) }
+                        val brandResults = manager.searchResults.map { it.file.displayName }.toSet()
+                        check(brandResults == setOf("project-notes.txt", "NikGapps-dev.apk")) {
+                            "Brand-name search returned unrelated/missing files: $brandQuery -> $brandResults"
+                        }
+                    }
+                    manager.searchQuery = "text files under 1 MB"
+                    manager.startSearch(tab)
+                    withTimeout(10000) { while (manager.isSearching) delay(20) }
+                    check(manager.searchResults.any { it.file.displayName == "notes.txt" }) { "Metadata search failed" }
+                } finally { manager.stopSearch(); tab.scope.cancel() }
+                val large = File(directory, "large.txt")
+                java.io.RandomAccessFile(large, "rw").use { it.setLength(21L * 1024 * 1024) }
+                check(runCatching { com.nixplorer.screen.main.tab.files.search.SmartDocumentSearch.match(targetContext, large, query) }.isFailure)
+                tax.writeText("A chocolate cake recipe, flour and sugar for the oven.")
+                val changed = com.nixplorer.screen.main.tab.files.search.SmartDocumentSearch.match(targetContext, tax, query)
+                check(changed == null || changed.score < relevant.score) { "Stale document vectors reused" }
+                model.release()
+                finish(Activity.RESULT_OK, Bundle().apply { putString("stream", "PASS Smart search: verified model download; 384-D inference; semantic relevance; TXT/config/PDF/DOCX contents; natural metadata filters; size limits; changed-file reindexing. Relevant score=${relevant.score}, unrelated=${irrelevant?.score}.\n") })
+            }
+        } catch (error: Throwable) {
+            finish(Activity.RESULT_CANCELED, Bundle().apply { putString("stream", "FAILED: ${error.stackTraceToString()}") })
+        } finally {
+            check(directory.canonicalPath.startsWith(targetContext.cacheDir.canonicalPath + File.separator))
+            directory.deleteRecursively()
+        }
+    }
+
     private fun appUsage() {
         try {
             runBlocking {

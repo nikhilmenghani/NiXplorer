@@ -70,6 +70,13 @@ class HomeTab : Tab() {
         }
     }
 
+    fun openAiSearch() {
+        globalClass.mainActivityManager.replaceCurrentTabWith(FilesTab(
+            StorageProvider.getPrimaryInternalStorage(globalClass).contentHolder,
+            aiSearchPage = true
+        ))
+    }
+
     fun getMainCategories() = arrayListOf<HomeCategory>().apply {
         val mainActivityManager = globalClass.mainActivityManager
         add(

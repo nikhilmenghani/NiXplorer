@@ -26,6 +26,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.History
 import androidx.compose.material.icons.rounded.Storage
@@ -191,6 +192,20 @@ fun ColumnScope.HomeTabContentView(tab: HomeTab) {
                 else -> Unit
             }
         }
+        Row(
+            Modifier.padding(horizontal = 12.dp).fillMaxWidth()
+                .background(MaterialTheme.colorScheme.surfaceContainerLow, RoundedCornerShape(12.dp))
+                .border(0.5.dp, MaterialTheme.colorScheme.surfaceContainerHighest, RoundedCornerShape(12.dp))
+                .clip(RoundedCornerShape(12.dp))
+                .clickable(onClick = tab::openAiSearch).padding(horizontal = 12.dp, vertical = 16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Icon(Icons.Rounded.Search, contentDescription = null, modifier = Modifier.size(24.dp))
+            Text(stringResource(R.string.ai_search), style = MaterialTheme.typography.bodyMedium,
+                modifier = Modifier.weight(1f))
+        }
+
     }
 }
 
@@ -557,7 +572,15 @@ private fun StorageSection(
 private fun HomeShortcuts(sections: List<HomeSectionConfig>, manager: MainActivityManager) {
     val context = LocalContext.current
     Column(Modifier.padding(horizontal = 12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        sections.chunked(2).forEach { pair ->
+        val shortcuts = sections.toMutableList()
+        val bookmarksIndex = shortcuts.indexOfFirst { it.type == HomeSectionType.BOOKMARKS }
+        val recycleIndex = shortcuts.indexOfFirst { it.type == HomeSectionType.RECYCLE_BIN }
+        if (bookmarksIndex >= 0 && recycleIndex >= 0) {
+            val bookmarks = shortcuts[bookmarksIndex]
+            shortcuts[bookmarksIndex] = shortcuts[recycleIndex]
+            shortcuts[recycleIndex] = bookmarks
+        }
+        shortcuts.chunked(2).forEach { pair ->
             Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 pair.forEach { section ->
                     val icon = when (section.type) {

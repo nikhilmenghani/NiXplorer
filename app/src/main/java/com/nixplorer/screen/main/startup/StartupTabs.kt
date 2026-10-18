@@ -20,5 +20,6 @@ data class StartupTab(
 enum class StartupTabType {
     HOME,
     APPS,
-    FILES
+    FILES,
+    AI_SEARCH
 }

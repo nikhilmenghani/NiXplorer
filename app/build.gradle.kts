@@ -115,6 +115,8 @@ androidComponents {
 
 dependencies {
     testImplementation("junit:junit:4.13.2")
+    implementation("com.microsoft.onnxruntime:onnxruntime-android:1.25.1")
+    implementation("com.tom-roush:pdfbox-android:2.0.27.0")
     "baselineProfile"(project(":baselineprofile"))
     implementation(libs.androidx.profileinstaller)
     coreLibraryDesugaring(libs.desugar.jdk.libs)

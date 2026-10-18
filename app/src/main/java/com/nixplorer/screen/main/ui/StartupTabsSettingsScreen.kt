@@ -16,6 +16,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Delete
@@ -293,6 +294,7 @@ fun StartupTabItem(
 fun StartupTabType.getIcon(): ImageVector {
     return when (this) {
         StartupTabType.HOME -> Icons.Rounded.Home
+        StartupTabType.AI_SEARCH -> Icons.Rounded.Search
         StartupTabType.APPS -> Icons.Rounded.Apps
         StartupTabType.FILES -> Icons.Rounded.Folder
     }
@@ -301,6 +303,7 @@ fun StartupTabType.getIcon(): ImageVector {
 fun StartupTabType.getTitle(): String {
     return when (this) {
         StartupTabType.HOME -> globalClass.getString(R.string.home)
+        StartupTabType.AI_SEARCH -> globalClass.getString(R.string.ai_search)
         StartupTabType.APPS -> globalClass.getString(R.string.apps)
         StartupTabType.FILES -> globalClass.getString(R.string.files)
     }
@@ -309,6 +312,7 @@ fun StartupTabType.getTitle(): String {
 fun StartupTabType.getDescription(): String {
     return when (this) {
         StartupTabType.HOME -> globalClass.getString(R.string.quick_access_to_common_folders_and_shortcuts)
+        StartupTabType.AI_SEARCH -> globalClass.getString(R.string.ai_search_description)
         StartupTabType.APPS -> globalClass.getString(R.string.browse_and_manage_installed_applications)
         StartupTabType.FILES -> globalClass.getString(R.string.navigate_and_manage_your_files_and_folders)
     }

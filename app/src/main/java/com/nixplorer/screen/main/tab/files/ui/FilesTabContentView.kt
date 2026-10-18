@@ -36,6 +36,15 @@ import com.nixplorer.screen.main.tab.files.ui.dialog.TaskRunningDialog
 @Composable
 fun ColumnScope.FilesTabContentView(tab: FilesTab) {
     Dialogs(tab)
+    if (tab.aiSearchPage) {
+        SearchDialog(show = true, tab = tab, asPage = true, onDismissRequest = {
+            val search = globalClass.searchManager
+            if (search.isSearching) search.stopSearch()
+            val manager = globalClass.mainActivityManager
+            if (manager.getActiveTab()?.id == tab.id) manager.replaceCurrentTabWith(HomeTab())
+        })
+        return
+    }
     BreadcrumbBar(tab)
     InfoRow()
     HorizontalDivider(modifier = Modifier, thickness = 1.dp)

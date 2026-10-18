@@ -1,6 +1,7 @@
 package com.nixplorer.screen.main.tab.files.search
 
 data class SearchOptions(
+    val smartSearch: Boolean = false,
     val ignoreCase: Boolean = true,
     val useRegex: Boolean = false,
     val searchByExtension: Boolean = false,

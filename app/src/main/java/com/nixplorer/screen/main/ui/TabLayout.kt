@@ -361,7 +361,11 @@ fun OptionsMenu(
             }
 
             is FilesTab -> {
-                if (tab.activeFolder is LocalFileHolder) {
+                if (tab.aiSearchPage) {
+                    val aiTabs = startupTabs.filter { it.type == StartupTabType.AI_SEARCH }
+                    addStartupTabMenuItems(tabType = StartupTabType.AI_SEARCH,
+                        canAdd = aiTabs.isEmpty(), canRemove = aiTabs.isNotEmpty())
+                } else if (tab.activeFolder is LocalFileHolder) {
                     val uniquePath = (tab.activeFolder as LocalFileHolder).uniquePath
                     val filesTabsPaths = startupTabs
                         .filter { it.type == StartupTabType.FILES }

@@ -52,7 +52,8 @@ import java.io.File
 
 class FilesTab(
     val source: ContentHolder,
-    context: Context? = null
+    context: Context? = null,
+    val aiSearchPage: Boolean = false
 ) : Tab() {
     companion object {
         fun isValidLocalPath(path: String) = File(path).exists()
@@ -123,6 +124,16 @@ class FilesTab(
 
     override fun onTabStarted() {
         super.onTabStarted()
+        if (aiSearchPage) {
+            globalClass.searchManager.apply {
+                if (isSearching) stopSearch()
+                clearResults()
+                searchQuery = emptyString
+                searchOptions = searchOptions.copy(smartSearch = true)
+            }
+            requestHomeToolbarUpdate()
+            return
+        }
         // Load either the source file or the home tab
         scope.launch {
             if (source.isFile()) { // This is true when locating a file
@@ -158,6 +169,11 @@ class FilesTab(
     }
 
     override fun onTabResumed() {
+        if (aiSearchPage) {
+            globalClass.searchManager.searchOptions = globalClass.searchManager.searchOptions.copy(smartSearch = true)
+            requestHomeToolbarUpdate()
+            return
+        }
         scope.launch {
             validateActiveFolder()
             // Important to clear any information from previous tabs (when switching tabs)
@@ -170,14 +186,14 @@ class FilesTab(
     }
 
     override val header: String
-        get() = tabViewLabel
+        get() = if (aiSearchPage) globalClass.getString(R.string.ai_search) else tabViewLabel
 
     override suspend fun getTitle(): String {
-        return createTitle()
+        return if (aiSearchPage) globalClass.getString(R.string.ai_search) else createTitle()
     }
 
     override suspend fun getSubtitle(): String {
-        return createSubtitle()
+        return if (aiSearchPage) globalClass.getString(R.string.ai_search_description) else createSubtitle()
     }
 
     private suspend fun createSubtitle(): String {
@@ -219,6 +235,10 @@ class FilesTab(
     }
 
     override fun onBackPressed(): Boolean {
+        if (aiSearchPage) {
+            if (globalClass.searchManager.isSearching) globalClass.searchManager.stopSearch()
+            return false
+        }
         if (unselectAnySelectedFiles()) {
             return true
         } else if (handleBackGesture) {

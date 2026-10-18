@@ -9,9 +9,10 @@ import androidx.compose.runtime.Composable
 @Composable
 fun BottomSheetDialog(
     onDismissRequest: () -> Unit,
-    skipPartiallyExpanded: Boolean = false,
+    skipPartiallyExpanded: Boolean = true,
     content: @Composable () -> Unit
 ) {
+    // Expanded uses the measured content height, capped by the available window.
     ModalBottomSheet(
         onDismissRequest = { onDismissRequest() },
         sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = skipPartiallyExpanded)

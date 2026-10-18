@@ -1,0 +1,130 @@
+Smart search implementation and verification
+
+Home now has an AI Search shortcut opening a dedicated embedded search page with
+Smart search enabled, input focused, and internal storage as its search root.
+The Home button is placed after the shortcut rows (Analyze storage / Recent Files)
+and uses their surface, border, padding and a search icon. The AI page puts location,
+examples and model controls behind the info icon next to Search; main-page space is
+reserved for the query and results, with consistent 12 dp margins.
+The shortcut remains available even if Home categories are hidden. Results open in
+another file tab, and Back returns to Home. AI Search tabs can be duplicated and
+restored in the saved session. The existing folder-level entry is still available:
+Search > Smart search. Ordinary filename/wildcard/regex search remains available
+when the switch is off. Scope is the selected folder and its descendants, or the
+current virtual-folder list. The app does not execute filesystem commands from text.
+
+English property-query examples:
+  videos over 100 MB from last week
+  PDFs modified yesterday
+  APKs over 1 MB and under 20 MB
+  files named Niktv
+  folders modified yesterday
+  *.apk
+Dates refer to modification time in the device timezone. Last week is the previous
+calendar Monday-Sunday. Sizes use 1024-based units; "large" is explicitly interpreted
+as greater than 100 MiB. The interpretation is displayed before/with results.
+Property parsing is a bounded English grammar, not a general conversational LLM.
+Unsupported filter phrases and conflicting ranges report errors. One type and AND
+filters are supported; OR/exclusion, nested logic and folder-size queries are not.
+
+Content-query examples:
+  documents about income tax
+  PDFs about mortgage payments
+  income tax
+The optional quantized all-MiniLM-L6-v2 model downloads 22,972,370 bytes, plus a
+231,508-byte WordPiece vocabulary. Model revision and SHA-256 checksums are pinned.
+Source: https://huggingface.co/Xenova/all-MiniLM-L6-v2
+Model: https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2 (Apache 2.0).
+Inference is local through ONNX Runtime Android 1.25.1. Documents and queries are
+not uploaded. A user can remove the downloaded model and vector cache from Search.
+The inference runtime increases APK size separately from the model download.
+
+Text/config/code, text-based PDF and DOCX content are supported. The reader inspects
+at most 5,600 initial characters / first 5 PDF pages, eight embedding chunks, with a
+20 MiB source-file ceiling and at most 500 semantic document candidates per search.
+On API 35+ Android's native PDF text reader is tried first, with PDFBox as an
+alternate. Older Android versions retain PDFBox. This recovers malformed numeric
+font metadata such as -17.-32768 that prevented PDFBox from reading a document.
+A disposable regression PDF reproduces the legacy parser exception and passes the
+native reader on Samsung. Real unreadable documents still produce an actionable
+filename-specific warning; parser internals are not shown. PDFBox scratch storage
+and retained text positions are bounded. DOCX XML is streamed
+with a 2 MiB decompressed ceiling and document declarations disabled. Encrypted
+PDFs, scanned/OCR content, old DOC, spreadsheets, presentations, image contents,
+archive contents and document-provider-only files are not semantically indexed.
+Unsupported formats can still match their filenames. File-name substring matches
+rank first; semantic content hits use cosine similarity >= 0.35. This threshold is
+heuristic: results can miss relevant documents or include unrelated ones. This is
+retrieval, not question answering or a chat assistant.
+
+Search is cancellable and on demand, off the main thread. The model uses two CPU
+threads and releases its session after search. Private disposable vector/snippet
+caches are keyed by canonical path, size, modification time and index version,
+with at most about 2,000 records. External changes preserving size AND modification
+time can evade this cache invalidation; removing the model clears the cache. There
+is no background full-storage index. Broad first-time scans can be slow. Folder
+read failures, unreadable/oversized documents and search limits surface incomplete
+result notices. Standard search retains its previous limits and behavior.
+
+Verification:
+  JDK 17, Gradle 8.11.1.
+  :app:assembleDebug :app:assembleDebugAndroidTest :app:testDebugUnitTest --no-daemon
+  Final Samsung build additionally uses '-Pandroid.injected.build.abi=arm64-v8a'.
+  All build tasks passed. Unit tests: 70 total, 69 passed, 1 Windows symlink case
+  skipped, 0 failures/errors. Seven new parser/tokenizer regression tests cover
+  metadata combinations, date ranges, size ranges, names/topics, rejected destructive
+  or ambiguous queries, Unicode normalization and token limits.
+
+  Samsung SM-S948W, Android 17, ARM64, 4 KiB running kernel:
+  am instrument -w -e phase smartSearch com.nixplorer.debug.test/com.nixplorer.safety.OperationSafetyInstrumentation
+  PASS verified model download, 384-D inference, semantic relevance, TXT/config/PDF/
+  DOCX contents, real SearchManager results, natural metadata filtering, file-size
+  limits and changed-file cache invalidation. Disposable app-private fixtures only.
+  Relevant tax-document score 0.51218; recipe excluded. Model remains installed.
+
+Compatibility regression:
+  ONNX Runtime 1.20.0's JNI ELF had LOAD alignment 0x1000. Static check reproduced
+  the 16 KiB compatibility defect despite inference working on Samsung's 4 KiB kernel.
+  1.23.2 fixed alignment but reproduced a native SIGILL during inference on Samsung's
+  Snapdragon processor. 1.25.1 fixes both tested paths; model inference was rerun.
+  Upstream CPU issue: https://github.com/microsoft/onnxruntime/issues/27884
+  python scripts/check-native-alignment.py app/build/intermediates/apk/debug/app-debug.apk
+  PASS all 5 ARM64 native libraries, all LOAD segments >= 0x4000.
+  Android build-tools 36.0.0 zipalign -c -P 16 4 <apk>: PASS.
+  An actual 16 KiB kernel and non-ARM64 inference were not tested. The script can
+  check x86_64 ELF segments too; this device APK includes ARM64 only. Universal
+  APKs will be larger because they include other native architectures.
+
+  :app:lintDebug remains FAILED with 125 MissingTranslation errors, including new
+  English strings from recent features. No other lint error category was reported.
+  No baseline/suppression was added. Existing SDK/D8/Kotlin metadata warnings remain.
+  Evidence logs are in D:/workspace/nix-smart-search-*.log.
+
+No commit or push performed. Unrelated README and IDE changes were preserved.
+
+Additional Samsung verification (compact page / PDF fix):
+- Captured the reported screen and confirmed the exact malformed-number parser
+  warning (-17.-32768) while querying "pdf about taxes".
+- Replaced location/examples/model cards on the AI page with an info icon that
+  opens a themed sheet; retained 12 dp page margins and compact empty-result state.
+- Fixture now places the malformed number in a PDF font descriptor. It asserts
+  that legacy PDFBox fails and the platform reader recovers valid text. The full
+  Smart search fixture suite passed on Samsung after this change.
+- Final app APK and matching generated test APK were installed successfully.
+- The read-only full-device query rerun lost its ADB connection when Samsung
+  disconnected. No result from that run was obtained; full-query verification
+  remains incomplete. A 180-second test timeout cancels any unfinished scan.
+
+Name-relevance correction:
+The reported query "NikGapps app" exposed generic-word semantic false positives.
+Names/acronyms, capitalized app names and unusually fragmented WordPiece terms now
+become required literal evidence in the filename or indexed document text. Filename
+matches rank first; qualifying content combines lexical evidence with semantic
+ranking. Ordinary topics such as income tax retain semantic matching. This is a
+heuristic rather than a general named-entity model; missing matches beyond the
+reader's content limits and misspelled names remain possible.
+Three new unit cases cover branded queries, lowercase unusual names and preserving
+ordinary semantic topics. Samsung's real-model fixture also verifies both "NikGapps
+app" and "nikgapps app" return exactly the branded APK and branded-content document,
+excluding unrelated app and tax documents. Build and unit checks passed; fixture
+suite passed; updated app installed on Samsung. No additional model download.

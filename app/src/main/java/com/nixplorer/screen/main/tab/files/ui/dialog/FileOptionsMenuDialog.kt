@@ -1,5 +1,9 @@
 package com.nixplorer.screen.main.tab.files.ui.dialog
 
+import android.media.MediaScannerConnection
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -13,12 +17,15 @@ import androidx.compose.material.icons.rounded.ContentCut
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.EditNote
 import androidx.compose.material.icons.rounded.FileCopy
+import androidx.compose.material.icons.rounded.FolderOpen
 import androidx.compose.material.icons.rounded.FormatColorText
 import androidx.compose.material.icons.rounded.Home
 import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.Merge
 import androidx.compose.material.icons.rounded.OpenInNewOff
 import androidx.compose.material.icons.rounded.PushPin
+import androidx.compose.material.icons.rounded.Visibility
+import androidx.compose.material.icons.rounded.VisibilityOff
 import androidx.compose.material.icons.rounded.Share
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -26,6 +33,14 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.produceState
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import com.nixplorer.screen.main.tab.files.misc.GalleryVisibility
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -68,6 +83,7 @@ fun FileOptionsMenuDialog(
 ) {
     if (show) {
         val context = LocalContext.current
+        val actionScope = LocalLifecycleOwner.current.lifecycleScope
 
         val targetFiles by remember {
             mutableStateOf(tab.selectedFiles.map { it.value }.toList())
@@ -89,259 +105,305 @@ fun FileOptionsMenuDialog(
         }
 
         BottomSheetDialog(onDismissRequest = { tab.toggleFileOptionsMenu(null) }) {
-            var details by remember {
-                mutableStateOf(
-                    if (selectedFilesCount > 1) {
-                        "and %d more".format(selectedFilesCount - 1)
-                    } else {
-                        targetContentHolder.getInitialDetails()
+            Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState())) {
+                var details by remember {
+                    mutableStateOf(
+                        if (selectedFilesCount > 1) {
+                            "and %d more".format(selectedFilesCount - 1)
+                        } else {
+                            targetContentHolder.getInitialDetails()
+                        }
+                    )
+                }
+
+                LaunchedEffect(Unit) {
+                    if (selectedFilesCount == 1) details = targetContentHolder.getDetails()
+                }
+
+                ItemRow(
+                    title = targetContentHolder.displayName,
+                    subtitle = details,
+                    ignoreSizePreferences = true,
+                    icon = {
+                        FileIcon(
+                            contentHolder = targetContentHolder,
+                            ignoreSizePreferences = true
+                        )
                     }
                 )
-            }
 
-            LaunchedEffect(Unit) {
-                if (selectedFilesCount == 1) details = targetContentHolder.getDetails()
-            }
+                Space(size = 6.dp)
+                HorizontalDivider()
+                Space(size = 6.dp)
 
-            ItemRow(
-                title = targetContentHolder.displayName,
-                subtitle = details,
-                ignoreSizePreferences = true,
-                icon = {
-                    FileIcon(
-                        contentHolder = targetContentHolder,
-                        ignoreSizePreferences = true
-                    )
-                }
-            )
-
-            Space(size = 6.dp)
-            HorizontalDivider()
-            Space(size = 6.dp)
-
-            Row {
-                // Delete
-                IconButton(
-                    modifier = Modifier.weight(1f),
-                    onClick = {
-                        onDismissRequest()
-                        tab.toggleDeleteConfirmationDialog(true)
-                    }
-                ) {
-                    Icon(
-                        imageVector = Icons.Rounded.Delete,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.error
-                    )
-                }
-
-                // Cut
-                IconButton(
-                    modifier = Modifier.weight(1f),
-                    onClick = {
-                        onDismissRequest()
-                        tab.unselectAllFiles()
-                        globalClass.taskManager.addTask(
-                            CopyTask(
-                                targetFiles,
-                                deleteSourceFiles = true
-                            )
-                        )
-                    }
-                ) {
-                    Icon(imageVector = Icons.Rounded.ContentCut, contentDescription = null)
-                }
-
-                // Copy
-                IconButton(
-                    modifier = Modifier.weight(1f),
-                    onClick = {
-                        onDismissRequest()
-                        tab.unselectAllFiles()
-                        globalClass.taskManager.addTask(
-                            CopyTask(
-                                targetFiles,
-                                deleteSourceFiles = false
-                            )
-                        )
-                    }
-                ) {
-                    Icon(imageVector = Icons.Rounded.FileCopy, contentDescription = null)
-                }
-
-                // Rename
-                IconButton(
-                    modifier = Modifier.weight(1f),
-                    onClick = {
-                        onDismissRequest()
-                        tab.toggleRenameDialog(true)
-                    }
-                ) {
-                    Icon(
-                        imageVector = Icons.Rounded.FormatColorText,
-                        contentDescription = null
-                    )
-                }
-
-                // Share
-                if (!hasFolders && targetContentHolder is LocalFileHolder) {
+                Row {
+                    // Delete
                     IconButton(
                         modifier = Modifier.weight(1f),
                         onClick = {
                             onDismissRequest()
-                            tab.shareSelectedFiles(context)
+                            tab.toggleDeleteConfirmationDialog(true)
                         }
                     ) {
-                        Icon(imageVector = Icons.Rounded.Share, contentDescription = null)
+                        Icon(
+                            imageVector = Icons.Rounded.Delete,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.error
+                        )
+                    }
+
+                    // Cut
+                    IconButton(
+                        modifier = Modifier.weight(1f),
+                        onClick = {
+                            onDismissRequest()
+                            tab.unselectAllFiles()
+                            globalClass.taskManager.addTask(
+                                CopyTask(
+                                    targetFiles,
+                                    deleteSourceFiles = true
+                                )
+                            )
+                        }
+                    ) {
+                        Icon(imageVector = Icons.Rounded.ContentCut, contentDescription = null)
+                    }
+
+                    // Copy
+                    IconButton(
+                        modifier = Modifier.weight(1f),
+                        onClick = {
+                            onDismissRequest()
+                            tab.unselectAllFiles()
+                            globalClass.taskManager.addTask(
+                                CopyTask(
+                                    targetFiles,
+                                    deleteSourceFiles = false
+                                )
+                            )
+                        }
+                    ) {
+                        Icon(imageVector = Icons.Rounded.FileCopy, contentDescription = null)
+                    }
+
+                    // Rename
+                    IconButton(
+                        modifier = Modifier.weight(1f),
+                        onClick = {
+                            onDismissRequest()
+                            tab.toggleRenameDialog(true)
+                        }
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.FormatColorText,
+                            contentDescription = null
+                        )
+                    }
+
+                    // Share
+                    if (!hasFolders && targetContentHolder is LocalFileHolder) {
+                        IconButton(
+                            modifier = Modifier.weight(1f),
+                            onClick = {
+                                onDismissRequest()
+                                tab.shareSelectedFiles(context)
+                            }
+                        ) {
+                            Icon(imageVector = Icons.Rounded.Share, contentDescription = null)
+                        }
+                    }
+
+                    // Properties
+                    IconButton(
+                        modifier = Modifier.weight(1f),
+                        onClick = {
+                            onDismissRequest()
+                            tab.toggleFilePropertiesDialog(true)
+                        }
+                    ) {
+                        Icon(imageVector = Icons.Rounded.Info, contentDescription = null)
                     }
                 }
 
-                // Properties
-                IconButton(
-                    modifier = Modifier.weight(1f),
-                    onClick = {
-                        onDismissRequest()
-                        tab.toggleFilePropertiesDialog(true)
+                Space(size = 6.dp)
+                HorizontalDivider()
+
+                if (isSingleFolder && targetContentHolder is LocalFileHolder) {
+                    val hidden by produceState<Boolean?>(null, targetContentHolder.uniquePath) {
+                        value = withContext(Dispatchers.IO) {
+                            runCatching { GalleryVisibility.isHidden(targetContentHolder.file) }.getOrNull()
+                        }
                     }
-                ) {
-                    Icon(imageVector = Icons.Rounded.Info, contentDescription = null)
-                }
-            }
-
-            Space(size = 6.dp)
-            HorizontalDivider()
-
-            if (isSingleFolder) {
-                FileOption(
-                    Icons.AutoMirrored.Rounded.OpenInNew,
-                    stringResource(R.string.open_in_new_tab)
-                ) {
-                    onDismissRequest()
-                    tab.requestNewTab(FilesTab(targetContentHolder))
-                    tab.unselectAllFiles()
-                }
-            }
-
-            if (isSingleFile && targetContentHolder is LocalFileHolder) {
-                FileOption(Icons.AutoMirrored.Rounded.OpenInNew, stringResource(R.string.open_externally)) {
-                    onDismissRequest()
-                    targetContentHolder.openExternally(context)
-                    tab.unselectAllFiles()
-                }
-                FileOption(
-                    Icons.AutoMirrored.Rounded.OpenInNew,
-                    stringResource(R.string.open_with)
-                ) {
-                    onDismissRequest()
-                    tab.toggleOpenWithDialog(true)
-                }
-            }
-
-            if (tab.activeFolder is VirtualFileHolder && (tab.activeFolder as VirtualFileHolder).type == VirtualFileHolder.BOOKMARKS) {
-                FileOption(
-                    Icons.Rounded.BookmarkAdd,
-                    stringResource(R.string.remove_from_bookmarks)
-                ) {
-                    onDismissRequest()
-                    val toRemove = targetFiles.map { it.uniquePath }
-                    val newBookmarks = globalClass.preferencesManager.bookmarks.filter {
-                        !toRemove.contains(it)
+                    hidden?.let { currentlyHidden ->
+                        FileOption(
+                            if (currentlyHidden) Icons.Rounded.Visibility else Icons.Rounded.VisibilityOff,
+                            stringResource(if (currentlyHidden) R.string.show_in_gallery else R.string.hide_from_gallery)
+                        ) {
+                            onDismissRequest()
+                            tab.unselectAllFiles()
+                            actionScope.launch {
+                                try {
+                                    withContext(Dispatchers.IO) {
+                                        GalleryVisibility.setHidden(targetContentHolder.file, !currentlyHidden)
+                                        MediaScannerConnection.scanFile(context.applicationContext,
+                                            arrayOf(targetContentHolder.file.absolutePath), null, null)
+                                    }
+                                    tab.reloadFiles()
+                                    globalClass.showMsg(R.string.gallery_visibility_updated)
+                                } catch (e: CancellationException) {
+                                    throw e
+                                } catch (_: Exception) {
+                                    globalClass.showMsg(R.string.gallery_visibility_failed)
+                                }
+                            }
+                        }
                     }
-                    globalClass.preferencesManager.bookmarks = newBookmarks.toSet()
-                    tab.unselectAllFiles()
-                    tab.reloadFiles()
                 }
-            }
 
-            if (tab.activeFolder is LocalFileHolder ||
-                (tab.activeFolder is VirtualFileHolder && (tab.activeFolder as VirtualFileHolder).type isNot VirtualFileHolder.BOOKMARKS)
-            ) {
-                FileOption(Icons.Rounded.BookmarkAdd, stringResource(R.string.add_to_bookmarks)) {
-                    onDismissRequest()
-                    globalClass.preferencesManager.bookmarks += targetFiles.map { it.uniquePath }
-                    globalClass.showMsg(R.string.added_to_bookmarks)
-                    tab.unselectAllFiles()
-                }
-                val pinnedFiles by remember {
-                    mutableStateOf(
-                        globalClass.preferencesManager.pinnedFiles
-                    )
-                }
-                if (targetFiles.map { it.uniquePath }.toSet() == pinnedFiles) {
+                if (isSingleFolder) {
                     FileOption(
-                        Icons.Rounded.PushPin,
-                        stringResource(R.string.unpin_from_home_tab)
+                        Icons.AutoMirrored.Rounded.OpenInNew,
+                        stringResource(R.string.open_in_new_tab)
                     ) {
                         onDismissRequest()
-                        val oldSet = globalClass.preferencesManager.pinnedFiles
-                        globalClass.preferencesManager.pinnedFiles = oldSet - pinnedFiles
-                        globalClass.showMsg(R.string.done)
-                        tab.unselectAllFiles()
-                    }
-                } else {
-                    FileOption(Icons.Rounded.PushPin, stringResource(R.string.pin_to_home_tab)) {
-                        onDismissRequest()
-                        val oldSet = globalClass.preferencesManager.pinnedFiles
-                        globalClass.preferencesManager.pinnedFiles =
-                            oldSet + targetFiles.map { it.uniquePath }
-                        globalClass.showMsg(R.string.done)
+                        tab.requestNewTab(FilesTab(targetContentHolder))
                         tab.unselectAllFiles()
                     }
                 }
-            }
 
-            if (isRequestPinShortcutSupported(context) && tab.activeFolder is LocalFileHolder && (isSingleFile || isSingleFolder)) {
-                FileOption(Icons.Rounded.Home, stringResource(R.string.add_to_home_screen)) {
-                    onDismissRequest()
-                    tab.addToHomeScreen(context, targetContentHolder as LocalFileHolder)
-                    tab.unselectAllFiles()
-                }
-            }
-
-            if (isSingleFile && targetContentHolder is LocalFileHolder) {
-                FileOption(Icons.Rounded.EditNote, stringResource(R.string.edit_with_text_editor)) {
-                    onDismissRequest()
-                    globalClass.textEditorManager.openTextEditor(targetContentHolder, context)
-                    tab.unselectAllFiles()
-                }
-
-                if (apkBundleFileType.contains(targetContentHolder.file.extension)) {
-                    FileOption(Icons.Rounded.Merge, stringResource(R.string.convert_to_apk)) {
+                if (isSingleFile && targetContentHolder is LocalFileHolder) {
+                    FileOption(
+                        Icons.Rounded.FolderOpen,
+                        stringResource(R.string.open_containing_folder)
+                    ) {
                         onDismissRequest()
-                        globalClass.taskManager.addTaskAndRun(
-                            ApksMergeTask(targetContentHolder),
-                            ApksMergeTaskParameters(
-                                globalClass.preferencesManager.signMergedApkBundleFiles
-                            )
+                        tab.unselectAllFiles()
+                        // A file source opens its real parent and highlights the file.
+                        // A normal tab also allows navigating up beyond virtual Recent folders.
+                        globalClass.mainActivityManager.replaceCurrentTabWith(
+                            FilesTab(source = targetContentHolder)
                         )
+                    }
+                    FileOption(Icons.AutoMirrored.Rounded.OpenInNew, stringResource(R.string.open_externally)) {
+                        onDismissRequest()
+                        targetContentHolder.openExternally(context)
+                        tab.unselectAllFiles()
+                    }
+                    FileOption(
+                        Icons.AutoMirrored.Rounded.OpenInNew,
+                        stringResource(R.string.open_with)
+                    ) {
+                        onDismissRequest()
+                        tab.toggleOpenWithDialog(true)
+                    }
+                }
+
+                if (tab.activeFolder is VirtualFileHolder && (tab.activeFolder as VirtualFileHolder).type == VirtualFileHolder.BOOKMARKS) {
+                    FileOption(
+                        Icons.Rounded.BookmarkAdd,
+                        stringResource(R.string.remove_from_bookmarks)
+                    ) {
+                        onDismissRequest()
+                        val toRemove = targetFiles.map { it.uniquePath }
+                        val newBookmarks = globalClass.preferencesManager.bookmarks.filter {
+                            !toRemove.contains(it)
+                        }
+                        globalClass.preferencesManager.bookmarks = newBookmarks.toSet()
+                        tab.unselectAllFiles()
+                        tab.reloadFiles()
+                    }
+                }
+
+                if (tab.activeFolder is LocalFileHolder ||
+                    (tab.activeFolder is VirtualFileHolder && (tab.activeFolder as VirtualFileHolder).type isNot VirtualFileHolder.BOOKMARKS)
+                ) {
+                    FileOption(Icons.Rounded.BookmarkAdd, stringResource(R.string.add_to_bookmarks)) {
+                        onDismissRequest()
+                        globalClass.preferencesManager.bookmarks += targetFiles.map { it.uniquePath }
+                        globalClass.showMsg(R.string.added_to_bookmarks)
+                        tab.unselectAllFiles()
+                    }
+                    val pinnedFiles by remember {
+                        mutableStateOf(
+                            globalClass.preferencesManager.pinnedFiles
+                        )
+                    }
+                    if (targetFiles.map { it.uniquePath }.toSet() == pinnedFiles) {
+                        FileOption(
+                            Icons.Rounded.PushPin,
+                            stringResource(R.string.unpin_from_home_tab)
+                        ) {
+                            onDismissRequest()
+                            val oldSet = globalClass.preferencesManager.pinnedFiles
+                            globalClass.preferencesManager.pinnedFiles = oldSet - pinnedFiles
+                            globalClass.showMsg(R.string.done)
+                            tab.unselectAllFiles()
+                        }
+                    } else {
+                        FileOption(Icons.Rounded.PushPin, stringResource(R.string.pin_to_home_tab)) {
+                            onDismissRequest()
+                            val oldSet = globalClass.preferencesManager.pinnedFiles
+                            globalClass.preferencesManager.pinnedFiles =
+                                oldSet + targetFiles.map { it.uniquePath }
+                            globalClass.showMsg(R.string.done)
+                            tab.unselectAllFiles()
+                        }
+                    }
+                }
+
+                if (isRequestPinShortcutSupported(context) && tab.activeFolder is LocalFileHolder && (isSingleFile || isSingleFolder)) {
+                    FileOption(Icons.Rounded.Home, stringResource(R.string.add_to_home_screen)) {
+                        onDismissRequest()
+                        tab.addToHomeScreen(context, targetContentHolder as LocalFileHolder)
                         tab.unselectAllFiles()
                     }
                 }
-            }
 
-            if (tab.activeFolder !is ZipFileHolder) {
-                FileOption(Icons.Rounded.Compress, stringResource(R.string.compress)) {
-                    CompressTask(targetFiles).let { task ->
-                        globalClass.taskManager.addTask(task, false)
-                        tab.toggleCompressTaskDialog(task)
+                if (isSingleFile && targetContentHolder is LocalFileHolder) {
+                    FileOption(Icons.Rounded.EditNote, stringResource(R.string.edit_with_text_editor)) {
+                        onDismissRequest()
+                        globalClass.textEditorManager.openTextEditor(targetContentHolder, context)
+                        tab.unselectAllFiles()
                     }
-                    onDismissRequest()
-                    tab.unselectAllFiles()
+
+                    if (apkBundleFileType.contains(targetContentHolder.file.extension)) {
+                        FileOption(Icons.Rounded.Merge, stringResource(R.string.convert_to_apk)) {
+                            onDismissRequest()
+                            globalClass.taskManager.addTaskAndRun(
+                                ApksMergeTask(targetContentHolder),
+                                ApksMergeTaskParameters(
+                                    globalClass.preferencesManager.signMergedApkBundleFiles
+                                )
+                            )
+                            tab.unselectAllFiles()
+                        }
+                    }
                 }
-            }
 
-            if (isSingleFile && targetContentHolder is LocalFileHolder) {
-                FileOption(
-                    Icons.Rounded.OpenInNewOff,
-                    stringResource(R.string.remove_default_opening_method)
-                ) {
-                    fromJson<DefaultOpeningMethods>(globalClass.preferencesManager.defaultOpeningMethods)?.let {
-                        globalClass.preferencesManager.defaultOpeningMethods =
-                            DefaultOpeningMethods(
-                                it.openingMethods.filter { it.extension != targetContentHolder.file.extension }
-                            ).toJson()
+                if (tab.activeFolder !is ZipFileHolder) {
+                    FileOption(Icons.Rounded.Compress, stringResource(R.string.compress)) {
+                        CompressTask(targetFiles).let { task ->
+                            globalClass.taskManager.addTask(task, false)
+                            tab.toggleCompressTaskDialog(task)
+                        }
+                        onDismissRequest()
+                        tab.unselectAllFiles()
                     }
-                    onDismissRequest()
+                }
+
+                if (isSingleFile && targetContentHolder is LocalFileHolder) {
+                    FileOption(
+                        Icons.Rounded.OpenInNewOff,
+                        stringResource(R.string.remove_default_opening_method)
+                    ) {
+                        fromJson<DefaultOpeningMethods>(globalClass.preferencesManager.defaultOpeningMethods)?.let {
+                            globalClass.preferencesManager.defaultOpeningMethods =
+                                DefaultOpeningMethods(
+                                    it.openingMethods.filter { it.extension != targetContentHolder.file.extension }
+                                ).toJson()
+                        }
+                        onDismissRequest()
+                    }
                 }
             }
         }
