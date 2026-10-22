@@ -132,6 +132,13 @@
             android:windowSoftInputMode="adjustResize" />
 
         <activity
+            android:name=".screen.viewer.pdf.editor.PdfEditorActivity"
+            android:exported="false"
+            android:label="@string/pdf_editor_title"
+            android:theme="@style/Theme.FileExplorer"
+            android:windowSoftInputMode="adjustResize" />
+
+        <activity
             android:name=".screen.viewer.pdf.PdfViewerActivity"
             android:exported="true"
             android:label="@string/title_activity_pdf_viewer"

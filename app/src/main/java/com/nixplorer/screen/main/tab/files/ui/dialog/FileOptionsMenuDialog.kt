@@ -1,6 +1,8 @@
 package com.nixplorer.screen.main.tab.files.ui.dialog
 
 import android.media.MediaScannerConnection
+import android.content.Intent
+import androidx.core.content.FileProvider
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Column
@@ -14,6 +16,7 @@ import androidx.compose.material.icons.automirrored.rounded.OpenInNew
 import androidx.compose.material.icons.rounded.BookmarkAdd
 import androidx.compose.material.icons.rounded.Compress
 import androidx.compose.material.icons.rounded.ContentCut
+import androidx.compose.material.icons.rounded.Transform
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.EditNote
 import androidx.compose.material.icons.rounded.FileCopy
@@ -63,6 +66,7 @@ import com.nixplorer.common.toJson
 import com.nixplorer.common.ui.BottomSheetDialog
 import com.nixplorer.common.ui.Space
 import com.nixplorer.screen.main.tab.files.FilesTab
+import com.nixplorer.screen.main.tab.files.conversion.ConversionCatalog
 import com.nixplorer.screen.main.tab.files.holder.LocalFileHolder
 import com.nixplorer.screen.main.tab.files.holder.VirtualFileHolder
 import com.nixplorer.screen.main.tab.files.holder.ZipFileHolder
@@ -74,6 +78,7 @@ import com.nixplorer.screen.main.tab.files.task.CompressTask
 import com.nixplorer.screen.main.tab.files.task.CopyTask
 import com.nixplorer.screen.main.tab.files.ui.FileIcon
 import com.nixplorer.screen.main.tab.files.ui.ItemRow
+import com.nixplorer.screen.viewer.pdf.editor.PdfEditorActivity
 
 @Composable
 fun FileOptionsMenuDialog(
@@ -360,6 +365,19 @@ fun FileOptionsMenuDialog(
                 }
 
                 if (isSingleFile && targetContentHolder is LocalFileHolder) {
+                    if (targetContentHolder.file.extension.equals("pdf", ignoreCase = true)) {
+                        FileOption(Icons.Rounded.EditNote, stringResource(R.string.pdf_edit_document)) {
+                            val uri = FileProvider.getUriForFile(
+                                context, "${context.packageName}.provider", targetContentHolder.file
+                            )
+                            context.startActivity(Intent(context, PdfEditorActivity::class.java).apply {
+                                data = uri
+                                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                            })
+                            onDismissRequest()
+                            tab.unselectAllFiles()
+                        }
+                    }
                     FileOption(Icons.Rounded.EditNote, stringResource(R.string.edit_with_text_editor)) {
                         onDismissRequest()
                         globalClass.textEditorManager.openTextEditor(targetContentHolder, context)
@@ -381,6 +399,22 @@ fun FileOptionsMenuDialog(
                 }
 
                 if (tab.activeFolder !is ZipFileHolder) {
+                    val convertibleSelection = targetFiles.filterIsInstance<LocalFileHolder>()
+                    if (convertibleSelection.isNotEmpty() &&
+                        convertibleSelection.size == targetFiles.size &&
+                        convertibleSelection.all { it.file.isFile && it.file.canRead() } &&
+                        convertibleSelection.any { ConversionCatalog.formatsFor(it.file).isNotEmpty() }
+                    ) {
+                        FileOption(
+                            Icons.Rounded.Transform,
+                            if (convertibleSelection.size == 1) stringResource(R.string.convert_file)
+                            else stringResource(R.string.convert_files_count, convertibleSelection.size)
+                        ) {
+                            tab.showConversionDialog(convertibleSelection)
+                            onDismissRequest()
+                        }
+                    }
+
                     FileOption(Icons.Rounded.Compress, stringResource(R.string.compress)) {
                         CompressTask(targetFiles).let { task ->
                             globalClass.taskManager.addTask(task, false)

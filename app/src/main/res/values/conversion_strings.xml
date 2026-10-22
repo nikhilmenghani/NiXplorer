@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="convert_file">Convert file</string>
+    <string name="convert_files_count">Convert %1$d files</string>
+    <string name="conversion_title">Convert files</string>
+    <string name="conversion_single_source">1 file selected</string>
+    <string name="conversion_source_count">%1$d files selected</string>
+    <string name="conversion_output_format">Output format</string>
+    <string name="conversion_originals_kept">Your original files stay unchanged</string>
+    <string name="conversion_quality_label">Image quality</string>
+    <string name="conversion_destination">Save location</string>
+    <string name="conversion_choose_later">Choose a folder later</string>
+    <string name="conversion_details">Conversion details</string>
+    <string name="conversion_jpeg_summary">Still image; transparent areas become white.</string>
+    <string name="conversion_png_summary">Lossless still image with transparency.</string>
+    <string name="conversion_webp_summary">Still image with lossy compression.</string>
+    <string name="conversion_document_summary">Text and paragraphs only. Layout and images are not retained.</string>
+    <string name="conversion_media_summary">Available input codecs depend on your device.</string>
+    <string name="conversion_queue_caption">Add a task to choose its destination later.</string>
+    <string name="conversion_destination_note">Original files are kept; existing names get a new number.</string>
+    <string name="conversion_save_here">Save here: %1$s</string>
+    <string name="conversion_navigate_destination">Open a writable device folder to convert here, or add a task and choose its destination later.</string>
+    <string name="conversion_queue_hint">Add task lets you choose the destination later. Open a folder, then run the task from Tasks.</string>
+    <string name="conversion_run_here">Run here: %1$s</string>
+    <string name="conversion_pending_destination">Open a writable device folder, then tap this task to run it there.</string>
+    <string name="conversion_pending_sources">From: %1$s</string>
+    <string name="conversion_pending_more">%1$s\n+ %2$d more</string>
+    <string name="conversion_convert_here">Convert here</string>
+    <string name="conversion_add_task">Add task</string>
+    <string name="conversion_review_selection">Review selected files</string>
+    <string name="conversion_hide_selection">Hide selected files</string>
+    <string name="conversion_select_files">Select at least one file to convert.</string>
+    <string name="conversion_no_common_format">These files have no shared output format. Review the selection and keep files of a compatible type, then convert the other files in another batch.</string>
+    <string name="conversion_unsupported">This file has no supported conversion. Choose an image, a supported text document, or an audio/video file.</string>
+    <string name="conversion_available_formats">To: %1$s</string>
+    <string name="conversion_no_formats">No supported output formats</string>
+    <string name="conversion_quality">Image quality: %1$d%%</string>
+    <string name="conversion_batch_note">Files convert one at a time in one task. Progress and individual results appear in Tasks.</string>
+    <string name="tasks_completed_hint">Recent completed tasks. Tap a task to view its results.</string>
+</resources>

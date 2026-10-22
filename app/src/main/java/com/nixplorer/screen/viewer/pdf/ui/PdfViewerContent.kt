@@ -1,5 +1,6 @@
 package com.nixplorer.screen.viewer.pdf.ui
 
+import android.content.Intent
 import android.util.Size
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -30,6 +31,7 @@ import com.nixplorer.App.Companion.globalClass
 import com.nixplorer.R
 import com.nixplorer.common.isNot
 import com.nixplorer.screen.viewer.pdf.PdfViewerInstance
+import com.nixplorer.screen.viewer.pdf.editor.PdfEditorActivity
 import com.nixplorer.screen.viewer.pdf.misc.PdfPageHolder
 import kotlinx.coroutines.Dispatchers.IO
 import kotlinx.coroutines.withContext
@@ -167,16 +169,20 @@ fun PdfViewerContent(instance: PdfViewerInstance, onBackPress: () -> Unit) {
                     }
                 )
 
+            }
+        }
                 TopToolbar(
                     visible = showToolbars,
                     title = instance.metadata.name,
                     onBackClick = onBackPress,
                     onOpenExternally = { openExternally(context, instance.uri, "application/pdf") },
+                    onEditClick = {
+                        context.startActivity(Intent(context, PdfEditorActivity::class.java)
+                            .setData(instance.uri).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION))
+                    },
                     onInfoClick = {
                         showInfoDialog = true
                     }
                 )
-            }
-        }
     }
 }

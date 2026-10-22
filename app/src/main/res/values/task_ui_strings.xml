@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <plurals name="task_ui_count">
+        <item quantity="one">%1$d task</item>
+        <item quantity="other">%1$d tasks</item>
+    </plurals>
+    <string name="task_ui_completed_hint">Your latest 20 completed tasks. Tap to view results.</string>
+    <string name="task_ui_run_here">Run here</string>
+    <string name="task_ui_progress_count">%1$d of %2$d</string>
+    <string name="task_ui_progress_percent">%1$d%%</string>
+    <string name="task_ui_running_background">You can hide this window and keep browsing.</string>
+</resources>

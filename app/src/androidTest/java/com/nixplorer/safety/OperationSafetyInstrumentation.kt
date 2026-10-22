@@ -10,6 +10,7 @@ import com.nixplorer.screen.main.tab.files.holder.ZipFileHolder
 import com.nixplorer.screen.main.tab.files.task.*
 import com.nixplorer.screen.main.tab.files.zip.ZipTree
 import kotlinx.coroutines.*
+import kotlinx.coroutines.sync.withLock
 import java.io.File
 import java.nio.file.Files
 import java.util.UUID
@@ -24,15 +25,40 @@ class OperationSafetyInstrumentation : Instrumentation() {
     private var phase: String? = null
     override fun onCreate(arguments: Bundle?) { phase = arguments?.getString("phase"); super.onCreate(arguments); start() }
     override fun onStart() {
+        // Custom instrumentation may start before Application.onCreate has returned on the main thread.
+        runOnMainSync { check(globalClass === targetContext.applicationContext) }
+        if (phase == "conversion") { ConversionFixtureChecks(this).run(); return }
+        if (phase == "pdfEditor") { PdfEditorFixtureChecks(this).run(); return }
         if (phase == "smartSearchDeviceQuery") { smartSearchDeviceQuery(); return }
         if (phase == "smartSearch") { smartSearch(); return }
         if (phase == "appUsage") { appUsage(); return }
         if (phase == "appsLoading") { appsLoading(); return }
         if (phase == "prepareRecovery") { prepareRecovery(); return }
         if (phase == "verifyRecovery") { verifyRecovery(); return }
-        root = File(targetContext.cacheDir, "operation-safety-${UUID.randomUUID()}").apply { check(mkdirs()) }
+        var resultCode = Activity.RESULT_OK
+        var report = ""
         try {
+            root = File(targetContext.cacheDir, "operation-safety-${UUID.randomUUID()}").apply { check(mkdirs()) }
             runBlocking {
+                val manager = globalClass.taskManager
+                manager.executionMutex.withLock {
+                    // Only records from our UUID-named, app-private fixtures may be discarded.
+                    // Resolve paths first so a traversal or symlink cannot imitate that prefix.
+                    val cache = targetContext.cacheDir.canonicalFile.toPath()
+                    val fixtureName = Regex("operation-safety-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
+                    manager.journal.load().filter { record ->
+                        record.sources.isNotEmpty() && record.sources.all { source ->
+                            runCatching {
+                                val local = File(source.substringBefore("!/")).canonicalFile.toPath()
+                                local.startsWith(cache) && local != cache &&
+                                    fixtureName.matches(cache.relativize(local).getName(0).toString())
+                            }.getOrDefault(false)
+                        }
+                    }.forEach { record ->
+                        manager.removeTask(record.id)
+                        manager.journal.remove(record.id)
+                    }
+                }
                 test("mixed copy outcomes and retry without repeating success") { mixedCopyAndRetry() }
                 test("nested folder move removes only verified empty sources") { folderMove() }
                 test("move preserves recreated source after completion") { moveAndRecreatedSource() }
@@ -56,14 +82,29 @@ class OperationSafetyInstrumentation : Instrumentation() {
                 test("recreated deletion target is retained without overwrite") { deleteRecreation() }
                 test("background/foreground service conflicts and decisions") { serviceTransitions() }
             }
-            finish(Activity.RESULT_OK, Bundle().apply { putString("stream", "\n${results.joinToString("\n")}\nAll ${results.size} Android fixture checks passed\n") })
+            report = "\n${results.joinToString("\n")}\nAll ${results.size} Android fixture checks passed\n"
         } catch (error: Throwable) {
-            finish(Activity.RESULT_CANCELED, Bundle().apply { putString("stream", "\n${results.joinToString("\n")}\nFAILED: ${error.stackTraceToString()}\n") })
+            resultCode = Activity.RESULT_CANCELED
+            report = "\n${results.joinToString("\n")}\nFAILED: ${error.stackTraceToString()}\n"
         } finally {
-            taskIds.forEach { globalClass.taskManager.removeTask(it); globalClass.taskManager.journal.remove(it) }
-            check(root.canonicalPath.startsWith(targetContext.cacheDir.canonicalPath + File.separator))
-            root.deleteRecursively()
+            try {
+                runBlocking {
+                    val manager = globalClass.taskManager
+                    manager.executionMutex.withLock {
+                        taskIds.forEach { manager.removeTask(it); manager.journal.remove(it) }
+                    }
+                }
+                if (::root.isInitialized) {
+                    check(root.canonicalFile.parentFile == targetContext.cacheDir.canonicalFile && root.name.startsWith("operation-safety-"))
+                    check(root.deleteRecursively()) { "Cannot remove disposable operation safety fixture: $root" }
+                }
+            } catch (error: Throwable) {
+                resultCode = Activity.RESULT_CANCELED
+                report += "\nCLEANUP FAILED: ${error.stackTraceToString()}\n"
+            }
         }
+        // finish() may kill the process immediately, so durable journal and fixture cleanup must precede it.
+        finish(resultCode, Bundle().apply { putString("stream", report) })
     }
     private suspend fun test(name: String, block: suspend () -> Unit) { block(); results.add("PASS $name") }
     private fun fixture(name: String) = File(root, name).apply { check(mkdirs()) }

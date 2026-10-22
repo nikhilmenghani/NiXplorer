@@ -3,6 +3,7 @@ package com.nixplorer.screen.main.tab.files.state
 data class DialogsState(
     val showRenameDialog: Boolean = false,
     val showNewZipFileDialog: Boolean = false,
+    val showConversionDialog: Boolean = false,
     val showOpenWithDialog: Boolean = false,
     val showFileOptionsDialog: Boolean = false,
     val showApkDialog: Boolean = false,

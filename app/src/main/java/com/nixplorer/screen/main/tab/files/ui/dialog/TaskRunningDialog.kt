@@ -1,20 +1,30 @@
 package com.nixplorer.screen.main.tab.files.ui.dialog
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.wrapContentHeight
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Stop
+import androidx.compose.material.icons.rounded.Sync
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.FilledTonalButton
-import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
+import androidx.compose.material3.Icon
+import androidx.compose.material3.LinearWavyProgressIndicator
+import androidx.compose.material3.LoadingIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -25,225 +35,140 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.nixplorer.App.Companion.globalClass
 import com.nixplorer.R
-import com.nixplorer.common.ui.Space
-import kotlin.math.max
+import com.nixplorer.common.ui.FileOperationTheme
 
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun TaskRunningDialog() {
     val dialogInfo = globalClass.taskManager.runningTaskDialogInfo
-    val progressMonitor = dialogInfo.progressMonitor
-    val showDialog = dialogInfo.showDialog
-    val linkedTask = dialogInfo.linkedTask
-    if (showDialog && progressMonitor != null && linkedTask != null) {
-        var isAborted by remember { mutableStateOf(false) }
-        val isHidden by remember { mutableStateOf(false) }
+    val progress = dialogInfo.progressMonitor
+    val task = dialogInfo.linkedTask
+    if (!dialogInfo.showDialog || progress == null || task == null) return
+
+    var isAborted by remember(task.id) { mutableStateOf(false) }
+    val fraction = progress.progress.coerceIn(0f, 1f)
+    val processed = (progress.totalContent - progress.remainingContent).coerceIn(0, progress.totalContent.coerceAtLeast(0))
+
+    FileOperationTheme {
         Dialog(
-            onDismissRequest = { },
+            onDismissRequest = {},
             properties = DialogProperties(
                 dismissOnBackPress = false,
-                dismissOnClickOutside = false
+                dismissOnClickOutside = false,
+                usePlatformDefaultWidth = false
             )
         ) {
-            Card(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .wrapContentHeight(),
-                shape = RoundedCornerShape(6.dp),
-                colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
-                ),
-                elevation = CardDefaults.cardElevation(defaultElevation = 6.dp)
-            ) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(24.dp),
-                    verticalArrangement = Arrangement.spacedBy(16.dp)
+            Box(Modifier.fillMaxWidth().padding(horizontal = 24.dp), contentAlignment = Alignment.Center) {
+                Surface(
+                    modifier = Modifier.widthIn(max = 480.dp).fillMaxWidth()
+                        .heightIn(max = (LocalConfiguration.current.screenHeightDp * .84f).dp),
+                    shape = RoundedCornerShape(28.dp),
+                    color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                    tonalElevation = 6.dp
                 ) {
-                    // Header Section
-                    Column(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        // Task Title
-                        Column {
-                            Text(
-                                modifier = Modifier.fillMaxWidth(),
-                                text = progressMonitor.taskTitle.ifEmpty { stringResource(R.string.preparing) },
-                                style = MaterialTheme.typography.headlineSmall,
-                                fontWeight = FontWeight.SemiBold,
-                                textAlign = TextAlign.Center,
-                                color = MaterialTheme.colorScheme.onSurface
-                            )
-                            Space(8.dp)
-                            HorizontalDivider(
-                                thickness = 1.dp,
-                                color = MaterialTheme.colorScheme.outlineVariant
-                            )
-                        }
-
-                        // Process Name and Content
-                        if (progressMonitor.processName.isNotEmpty()) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Text(
-                                    text = progressMonitor.processName,
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    modifier = Modifier.weight(1f, fill = false)
-                                )
-                                if (progressMonitor.contentName.isNotEmpty()) {
-                                    Text(
-                                        text = " - ${progressMonitor.contentName}",
-                                        style = MaterialTheme.typography.bodyMedium,
-                                        color = MaterialTheme.colorScheme.primary,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis,
-                                        modifier = Modifier.weight(1f)
-                                    )
+                    Column {
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(24.dp),
+                            horizontalArrangement = Arrangement.spacedBy(16.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Surface(shape = RoundedCornerShape(16.dp), color = MaterialTheme.colorScheme.primaryContainer) {
+                                Box(Modifier.size(44.dp), contentAlignment = Alignment.Center) {
+                                    LoadingIndicator(modifier = Modifier.size(28.dp),
+                                        color = MaterialTheme.colorScheme.onPrimaryContainer)
                                 }
                             }
+                            Text(
+                                text = progress.taskTitle.ifBlank { stringResource(R.string.preparing) },
+                                style = MaterialTheme.typography.titleLarge,
+                                fontWeight = FontWeight.SemiBold,
+                                modifier = Modifier.weight(1f)
+                            )
                         }
-                    }
-
-                    // Progress Section
-                    Column(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalArrangement = Arrangement.spacedBy(12.dp)
-                    ) {
-                        // Progress Bar
-                        if (progressMonitor.progress > 0) {
-                            Column(
-                                modifier = Modifier.fillMaxWidth(),
-                                verticalArrangement = Arrangement.spacedBy(8.dp)
-                            ) {
-                                LinearProgressIndicator(
-                                    progress = { progressMonitor.progress },
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .height(8.dp)
-                                        .clip(RoundedCornerShape(4.dp)),
-                                    color = MaterialTheme.colorScheme.primary,
-                                    trackColor = MaterialTheme.colorScheme.primaryContainer
-                                )
-
-                                // Progress Info Row
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    // Content Counter
-                                    if (progressMonitor.totalContent > 0) {
+                        Column(
+                            modifier = Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState())
+                                .padding(horizontal = 24.dp),
+                            verticalArrangement = Arrangement.spacedBy(16.dp)
+                        ) {
+                            Surface(shape = RoundedCornerShape(20.dp), color = MaterialTheme.colorScheme.surfaceContainerLow) {
+                                Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                                    Text(
+                                        if (isAborted) stringResource(R.string.stopping)
+                                        else progress.processName.ifBlank { stringResource(R.string.preparing) },
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        fontWeight = FontWeight.Medium
+                                    )
+                                    if (progress.contentName.isNotBlank()) {
+                                        Text(progress.contentName, style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            maxLines = 3, overflow = TextOverflow.Ellipsis)
+                                    }
+                                    val indicatorModifier = Modifier.fillMaxWidth()
+                                    if (fraction > 0f) {
+                                        LinearWavyProgressIndicator(progress = { fraction }, modifier = indicatorModifier,
+                                            color = MaterialTheme.colorScheme.primary, trackColor = MaterialTheme.colorScheme.surfaceContainerHighest)
+                                    } else {
+                                        LinearWavyProgressIndicator(modifier = indicatorModifier, color = MaterialTheme.colorScheme.primary,
+                                            trackColor = MaterialTheme.colorScheme.surfaceContainerHighest)
+                                    }
+                                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.SpaceBetween) {
                                         Text(
-                                            text = "${
-                                                max(
-                                                    progressMonitor.totalContent - progressMonitor.remainingContent,
-                                                    0
-                                                )
-                                            }/${progressMonitor.totalContent}",
-                                            style = MaterialTheme.typography.bodySmall,
+                                            if (progress.totalContent > 0) stringResource(R.string.task_ui_progress_count, processed, progress.totalContent)
+                                            else stringResource(R.string.preparing),
+                                            style = MaterialTheme.typography.labelMedium,
                                             color = MaterialTheme.colorScheme.onSurfaceVariant
                                         )
+                                        if (fraction > 0f) {
+                                            Text(stringResource(R.string.task_ui_progress_percent, (fraction * 100).toInt()),
+                                                style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+                                        }
                                     }
-
-                                    // Percentage
-                                    Text(
-                                        text = "${(progressMonitor.progress * 100).toInt()}%",
-                                        style = MaterialTheme.typography.bodyMedium,
-                                        fontWeight = FontWeight.Medium,
-                                        color = MaterialTheme.colorScheme.primary
-                                    )
                                 }
                             }
-                        } else {
-                            // Indeterminate progress
-                            Column(
-                                modifier = Modifier.fillMaxWidth(),
-                                verticalArrangement = Arrangement.spacedBy(8.dp)
-                            ) {
-                                LinearProgressIndicator(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .height(8.dp)
-                                        .clip(RoundedCornerShape(4.dp)),
-                                    color = MaterialTheme.colorScheme.primary,
-                                    trackColor = MaterialTheme.colorScheme.primaryContainer
-                                )
-
-                                if (progressMonitor.totalContent > 0) {
-                                    Text(
-                                        text = "${progressMonitor.totalContent - progressMonitor.remainingContent}/${progressMonitor.totalContent}",
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        modifier = Modifier.align(Alignment.Start)
-                                    )
+                            if (task.metadata.canMoveToBackground) {
+                                Text(stringResource(R.string.task_ui_running_background), style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                        }
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(16.dp),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            if (task.metadata.canMoveToBackground) {
+                                TextButton(
+                                    onClick = { globalClass.taskManager.hideRunningTaskDialog() },
+                                    enabled = !isAborted,
+                                    modifier = Modifier.defaultMinSize(minHeight = 48.dp)
+                                ) {
+                                    Text(stringResource(R.string.hide))
                                 }
                             }
-                        }
-                    }
-
-                    // Actions Section
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.End,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        // Move to Background Button
-                        if (linkedTask.metadata.canMoveToBackground) {
-                            TextButton(
-                                enabled = !isHidden && !isAborted,
-                                onClick = {
-                                    globalClass.taskManager.hideRunningTaskDialog()
-                                },
-                                colors = ButtonDefaults.textButtonColors(
-                                    contentColor = MaterialTheme.colorScheme.primary
-                                )
-                            ) {
-                                Text(
-                                    text = stringResource(R.string.hide),
-                                    style = MaterialTheme.typography.labelLarge
-                                )
-                            }
-
-                            if (linkedTask.metadata.isCancellable) {
-                                Space(8.dp)
-                            }
-                        }
-
-                        // Cancel/Stop Button
-                        if (linkedTask.metadata.isCancellable) {
-                            FilledTonalButton(
-                                onClick = {
-                                    linkedTask.abortTask()
-                                    isAborted = true
-                                },
-                                enabled = !isAborted && !isHidden,
-                                colors = ButtonDefaults.filledTonalButtonColors(
-                                    containerColor = MaterialTheme.colorScheme.errorContainer,
-                                    contentColor = MaterialTheme.colorScheme.onErrorContainer,
-                                    disabledContainerColor = MaterialTheme.colorScheme.surfaceVariant,
-                                    disabledContentColor = MaterialTheme.colorScheme.onSurfaceVariant
-                                ),
-                                shape = RoundedCornerShape(6.dp)
-                            ) {
-                                Text(
-                                    text = if (isAborted) stringResource(R.string.stopping) else stringResource(
-                                        R.string.stop
-                                    ),
-                                    style = MaterialTheme.typography.labelLarge
-                                )
+                            if (task.metadata.isCancellable) {
+                                FilledTonalButton(
+                                    onClick = { task.abortTask(); isAborted = true },
+                                    enabled = !isAborted,
+                                    modifier = Modifier.defaultMinSize(minHeight = 48.dp),
+                                    shapes = ButtonDefaults.shapes(),
+                                    colors = ButtonDefaults.filledTonalButtonColors(
+                                        containerColor = MaterialTheme.colorScheme.errorContainer,
+                                        contentColor = MaterialTheme.colorScheme.onErrorContainer
+                                    )
+                                ) {
+                                    Icon(Icons.Rounded.Stop, null, modifier = Modifier.size(18.dp))
+                                    Text(if (isAborted) stringResource(R.string.stopping) else stringResource(R.string.stop),
+                                        modifier = Modifier.padding(start = 8.dp))
+                                }
                             }
                         }
                     }

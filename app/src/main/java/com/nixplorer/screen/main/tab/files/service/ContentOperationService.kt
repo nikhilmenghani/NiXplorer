@@ -148,12 +148,9 @@ class ContentOperationService : Service() {
             } finally {
                 globalClass.taskManager.releaseDispatch(taskId)
                 globalClass.mainActivityManager.resumeActiveTab()
-                if (task.getCurrentStatus() == TaskStatus.SUCCESS) {
-                    runningTaskIds.remove(taskId)
-                } else {
-                    // require action from user
-                    runningTaskIds[taskId] = false
-                }
+                // Failed, cancelled and conflicted tasks remain in TaskManager for review/retry.
+                // They do not hold a foreground service open when there is no work executing.
+                runningTaskIds.remove(taskId)
 
                 updateNotification()
                 getSystemService(NotificationManager::class.java).notify(taskId.hashCode(),

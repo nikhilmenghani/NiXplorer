@@ -22,6 +22,7 @@ import androidx.compose.material.icons.automirrored.rounded.OpenInNew
 import androidx.compose.ui.res.stringResource
 import com.nixplorer.R
 import androidx.compose.material.icons.rounded.Info
+import androidx.compose.material.icons.rounded.EditNote
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -39,6 +40,7 @@ fun TopToolbar(
     title: String,
     onBackClick: () -> Unit,
     onInfoClick: () -> Unit,
+    onEditClick: () -> Unit,
     onOpenExternally: () -> Unit
 ) {
     AnimatedVisibility(
@@ -91,6 +93,9 @@ fun TopToolbar(
                     )
                 }
 
+                IconButton(onClick = onEditClick) {
+                    Icon(Icons.Rounded.EditNote, stringResource(R.string.pdf_editor_edit), tint = colorScheme.onSurface)
+                }
                 IconButton(onClick = onInfoClick) {
                     Icon(
                         imageVector = Icons.Rounded.Info,

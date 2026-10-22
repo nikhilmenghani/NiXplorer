@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="pdf_editor_title">PDF editor</string>
+    <string name="pdf_editor_edit">Edit PDF</string>
+    <string name="pdf_edit_document">Edit PDF document</string>
+    <string name="pdf_editor_save_copy">Save a copy</string>
+    <string name="pdf_editor_open">Open PDF</string>
+    <string name="pdf_editor_original_kept">Original kept · Save changes as a copy</string>
+    <string name="pdf_editor_discard_title">Leave without saving?</string>
+    <string name="pdf_editor_discard_message">Your unsaved edits will be lost. The original document is unchanged.</string>
+    <string name="pdf_editor_discard">Discard changes</string>
+    <string name="pdf_editor_keep_editing">Keep editing</string>
+    <string name="pdf_editor_undo">Undo</string>
+    <string name="pdf_editor_redo">Redo</string>
+    <string name="pdf_editor_tools">Tools</string>
+    <string name="pdf_editor_page">Page %1$d of %2$d</string>
+    <string name="pdf_editor_pages">Pages</string>
+    <string name="pdf_editor_page_number">Page number</string>
+    <string name="pdf_editor_previous">Previous page</string>
+    <string name="pdf_editor_next">Next page</string>
+    <string name="pdf_editor_password_title">Password required</string>
+    <string name="pdf_editor_password_hint">Open or owner password</string>
+    <string name="pdf_editor_password_note">Use the owner password when the document restricts editing.</string>
+    <string name="pdf_editor_unlock">Open document</string>
+    <string name="pdf_editor_loading">Opening document…</string>
+    <string name="pdf_editor_working">Applying changes…</string>
+    <string name="pdf_editor_saving">Saving edited copy…</string>
+    <string name="pdf_editor_saved">Edited copy saved</string>
+    <string name="pdf_editor_save_failed">Could not save the copy. Your edits are still available.</string>
+    <string name="pdf_editor_error">PDF operation failed</string>
+    <string name="pdf_editor_retry">Try again</string>
+    <string name="pdf_editor_source_large">This PDF is too large for the editor.</string>
+    <string name="pdf_editor_source_unreadable">Could not read this document.</string>
+    <string name="pdf_editor_choose_document">Open a PDF to edit text overlays, images, drawings, forms, pages and document settings.</string>
+    <string name="pdf_editor_signed_warning">This document contains digital signatures. Saving an edited copy can invalidate them. A drawn signature is a visual mark, not a verified digital signature.</string>
+    <string name="pdf_editor_visual_cover_warning">Whiteout adds a visual cover. The underlying content can remain recoverable; it is not secure redaction.</string>
+    <string name="pdf_editor_drawing_signature_note">Draw a visual signature on the page. This does not create a certificate-based digital signature.</string>
+    <string name="pdf_editor_text_note">Text is added as an overlay. Existing PDF text remains unchanged.</string>
+    <string name="pdf_editor_tap_to_place">Tap or drag on the page to position this tool.</string>
+    <string name="pdf_editor_page_preview">Editable page preview</string>
+    <string name="pdf_editor_cancel_operation">Cancel operation</string>
+    <string name="pdf_editor_zoom_in">Zoom in</string>
+    <string name="pdf_editor_zoom_out">Zoom out</string>
+    <string name="pdf_editor_fit_page">Fit page</string>
+</resources>

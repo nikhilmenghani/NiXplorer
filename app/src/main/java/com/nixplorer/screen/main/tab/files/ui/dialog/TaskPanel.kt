@@ -3,11 +3,6 @@ package com.nixplorer.screen.main.tab.files.ui.dialog
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.tween
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.scaleIn
-import androidx.compose.animation.scaleOut
-import androidx.compose.animation.slideInVertically
-import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -19,13 +14,19 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.selection.SelectionContainer
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.ExperimentalMaterialApi
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ErrorOutline
@@ -35,16 +36,22 @@ import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.rounded.Task
 import androidx.compose.material.icons.rounded.TaskAlt
+import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.FolderOpen
+import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material3.Card
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -60,7 +67,9 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -69,23 +78,21 @@ import com.kevinnzou.compose.swipebox.SwipeBox
 import com.kevinnzou.compose.swipebox.SwipeDirection
 import com.nixplorer.App.Companion.globalClass
 import com.nixplorer.R
-import com.nixplorer.common.isNot
 import com.nixplorer.common.ui.BottomSheetDialog
+import com.nixplorer.common.ui.FileOperationTheme
 import com.nixplorer.common.ui.Space
 import com.nixplorer.screen.main.tab.files.FilesTab
+import com.nixplorer.screen.main.tab.files.conversion.ConversionTask
+import com.nixplorer.screen.main.tab.files.conversion.ConversionTaskParameters
+import com.nixplorer.screen.main.tab.files.holder.LocalFileHolder
 import com.nixplorer.screen.main.tab.files.holder.VirtualFileHolder
 import com.nixplorer.screen.main.tab.files.service.ContentOperationService.Companion.removeBackgroundTask
 import com.nixplorer.screen.main.tab.files.task.CompressTask
 import com.nixplorer.screen.main.tab.files.task.CopyTask
 import com.nixplorer.screen.main.tab.files.task.CopyTaskParameters
 import com.nixplorer.screen.main.tab.files.task.Task
-import com.nixplorer.screen.main.tab.files.task.TaskStatus
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import kotlin.math.max
 
 @OptIn(ExperimentalMaterialApi::class, ExperimentalFoundationApi::class)
 @Composable
@@ -102,257 +109,359 @@ fun TaskPanel(
         val failedTasks = remember { mutableStateListOf<Task>() }
         val pendingTasks = remember { mutableStateListOf<Task>() }
         val invalidTasks = remember { mutableStateListOf<Task>() }
+        val completedTasks = remember { mutableStateListOf<Task>() }
+        var detailsTask by remember { mutableStateOf<Task?>(null) }
 
         LaunchedEffect(Unit) {
             globalClass.taskManager.validateTasks()
 
             while (tab.dialogsState.value.showTasksPanel) {
-                if (globalClass.taskManager.runningTasks isNot runningTasks) {
-                    runningTasks.clear()
-                    runningTasks.addAll(globalClass.taskManager.runningTasks)
+                refreshTaskList(runningTasks, globalClass.taskManager.runningTasks)
+                refreshTaskList(pausedTasks, globalClass.taskManager.pausedTasks)
+                refreshTaskList(failedTasks, globalClass.taskManager.failedTasks)
+                refreshTaskList(pendingTasks, globalClass.taskManager.pendingTasks)
+                refreshTaskList(invalidTasks, globalClass.taskManager.invalidTasks)
+                val latestCompleted = synchronized(globalClass.taskManager.completedTasks) {
+                    globalClass.taskManager.completedTasks.toList().takeLast(20).asReversed()
                 }
-                if (globalClass.taskManager.pausedTasks isNot pausedTasks) {
-                    pausedTasks.clear()
-                    pausedTasks.addAll(globalClass.taskManager.pausedTasks)
-                }
-                if (globalClass.taskManager.failedTasks isNot failedTasks) {
-                    failedTasks.clear()
-                    failedTasks.addAll(globalClass.taskManager.failedTasks)
-                }
-                if (globalClass.taskManager.pendingTasks isNot pendingTasks) {
-                    pendingTasks.clear()
-                    pendingTasks.addAll(globalClass.taskManager.pendingTasks)
-                }
-                if (globalClass.taskManager.invalidTasks isNot invalidTasks) {
-                    invalidTasks.clear()
-                    invalidTasks.addAll(globalClass.taskManager.invalidTasks)
+                if (completedTasks != latestCompleted) {
+                    completedTasks.clear()
+                    completedTasks.addAll(latestCompleted)
                 }
                 delay(250)
             }
         }
 
-        BottomSheetDialog(
-            onDismissRequest = onDismissRequest
-        ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 24.dp)
-                    .padding(bottom = 16.dp),
-                horizontalArrangement = Arrangement.Center,
-                verticalAlignment = Alignment.CenterVertically
+        FileOperationTheme {
+            BottomSheetDialog(
+                onDismissRequest = onDismissRequest
             ) {
-                Icon(
-                    imageVector = Icons.Rounded.TaskAlt,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(24.dp)
-                )
-                Space(8.dp)
-                Text(
-                    text = stringResource(R.string.tasks),
-                    style = MaterialTheme.typography.headlineSmall,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    fontWeight = FontWeight.Medium
-                )
-            }
-
-            AnimatedVisibility(
-                !runningTasks.isEmpty() || !pausedTasks.isEmpty() ||
-                        !failedTasks.isEmpty() || !pendingTasks.isEmpty() || !invalidTasks.isEmpty()
-            ) {
-                LazyColumn(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .animateContentSize(animationSpec = tween(300)),
-                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    // Running Tasks
-                    if (runningTasks.isNotEmpty()) {
-                        item {
-                            TaskCategoryHeader(
-                                title = stringResource(R.string.tasks_running),
-                                count = runningTasks.size,
-                                color = MaterialTheme.colorScheme.primary
-                            )
-                        }
-                        items(
-                            runningTasks.sortedBy { it.metadata.creationTime }.reversed(),
-                            key = { "running-${it.id}" }) { task ->
-                            RunningTaskItem(
-                                task = task,
-                                onClick = {
-                                    tab.toggleTasksPanel(false)
-                                    globalClass.taskManager.bringToForeground(task)
+                Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.TopCenter) {
+                    Column(Modifier.widthIn(max = 560.dp).fillMaxWidth()
+                        .heightIn(max = (LocalConfiguration.current.screenHeightDp * .86f).dp)) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(start = 24.dp, end = 12.dp, bottom = 12.dp),
+                            horizontalArrangement = Arrangement.spacedBy(12.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Surface(shape = RoundedCornerShape(14.dp), color = MaterialTheme.colorScheme.primaryContainer) {
+                                Box(Modifier.size(44.dp), contentAlignment = Alignment.Center) {
+                                    Icon(Icons.Rounded.TaskAlt, null, tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                                        modifier = Modifier.size(22.dp))
                                 }
-                            )
+                            }
+                            Column(Modifier.weight(1f)) {
+                                Text(stringResource(R.string.tasks), style = MaterialTheme.typography.titleLarge,
+                                    fontWeight = FontWeight.SemiBold)
+                                val taskCount = runningTasks.size + pausedTasks.size + failedTasks.size + pendingTasks.size + invalidTasks.size + completedTasks.size
+                                Text(pluralStringResource(R.plurals.task_ui_count, taskCount, taskCount),
+                                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                            IconButton(onClick = onDismissRequest, modifier = Modifier.size(48.dp)) {
+                                Icon(Icons.Rounded.Close, stringResource(R.string.close), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
                         }
-                        item { Space(8.dp) }
-                    }
 
-                    // Paused Tasks
-                    if (pausedTasks.isNotEmpty()) {
-                        item {
-                            TaskCategoryHeader(
-                                title = stringResource(R.string.tasks_paused),
-                                count = pausedTasks.size,
-                                color = MaterialTheme.colorScheme.tertiary
-                            )
-                        }
-                        items(
-                            pausedTasks.sortedBy { it.metadata.creationTime }.reversed(),
-                            key = { "paused-${it.id}" }) { task ->
-                            SwipeableTaskItem(
-                                task = task,
-                                icon = Icons.Default.Pause,
-                                iconTint = MaterialTheme.colorScheme.tertiary,
-                                onSwipeToDelete = {
-                                    pausedTasks.remove(task)
-                                    globalClass.taskManager.removeTask(task.id)
-                                    removeBackgroundTask(context, task.id)
-                                },
-                                onClick = {
-                                    globalClass.taskManager.continueTask(task.id)
-                                    tab.toggleTasksPanel(false)
-                                }
-                            )
-                        }
-                        item { Space(8.dp) }
-                    }
-
-                    // Failed Tasks
-                    if (failedTasks.isNotEmpty()) {
-                        item {
-                            TaskCategoryHeader(
-                                title = stringResource(R.string.tasks_failed),
-                                count = failedTasks.size,
-                                color = MaterialTheme.colorScheme.error
-                            )
-                        }
-                        items(
-                            failedTasks.sortedBy { it.metadata.creationTime }.reversed(),
-                            key = { "failed-${it.id}" }) { task ->
-                            SwipeableTaskItem(
-                                task = task,
-                                icon = Icons.Default.ErrorOutline,
-                                iconTint = MaterialTheme.colorScheme.error,
-                                onSwipeToDelete = {
-                                    failedTasks.remove(task)
-                                    globalClass.taskManager.removeTask(task.id)
-                                    removeBackgroundTask(context, task.id)
-                                },
-                                onClick = {
-                                    globalClass.taskManager.continueTask(task.id)
-                                    tab.toggleTasksPanel(false)
-                                }
-                            )
-                        }
-                        item { Space(8.dp) }
-                    }
-
-                    // Pending Tasks
-                    if (pendingTasks.isNotEmpty()) {
-                        item {
-                            TaskCategoryHeader(
-                                title = stringResource(R.string.tasks_pending),
-                                count = pendingTasks.size,
-                                color = MaterialTheme.colorScheme.secondary
-                            )
-                        }
-                        items(
-                            pendingTasks.sortedBy { it.metadata.creationTime }.reversed(),
-                            key = { "pending-${it.id}" }) { task ->
-                            SwipeableTaskItem(
-                                task = task,
-                                icon = Icons.Default.HourglassEmpty,
-                                iconTint = MaterialTheme.colorScheme.secondary,
-                                onSwipeToDelete = {
-                                    pendingTasks.remove(task)
-                                    globalClass.taskManager.removeTask(task.id)
-                                },
-                                onClick = {
-                                    if (tab.activeFolder is VirtualFileHolder || tab !is FilesTab) {
-                                        globalClass.showMsg(globalClass.getString(R.string.can_not_run_tasks))
-                                        return@SwipeableTaskItem
+                        AnimatedVisibility(
+                            visible = !runningTasks.isEmpty() || !pausedTasks.isEmpty() ||
+                                    !failedTasks.isEmpty() || !pendingTasks.isEmpty() || !invalidTasks.isEmpty() || !completedTasks.isEmpty(),
+                            modifier = Modifier.weight(1f, fill = false)
+                        ) {
+                            LazyColumn(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .animateContentSize(animationSpec = tween(300)),
+                                contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 24.dp),
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                // Running Tasks
+                                if (runningTasks.isNotEmpty()) {
+                                    item {
+                                        TaskCategoryHeader(
+                                            title = stringResource(R.string.tasks_running),
+                                            count = runningTasks.size,
+                                            color = MaterialTheme.colorScheme.primary
+                                        )
                                     }
-                                    tab.toggleTasksPanel(false)
-                                    when (task) {
-                                        is CopyTask -> {
-                                            globalClass.taskManager.runTask(
-                                                task.id,
-                                                CopyTaskParameters(tab.activeFolder)
-                                            )
-                                        }
+                                    items(
+                                        runningTasks.sortedBy { it.metadata.creationTime }.reversed(),
+                                        key = { "running-${it.id}" }) { task ->
+                                        RunningTaskItem(
+                                            task = task,
+                                            onClick = {
+                                                tab.toggleTasksPanel(false)
+                                                globalClass.taskManager.bringToForeground(task)
+                                            }
+                                        )
+                                    }
+                                    item { Space(8.dp) }
+                                }
 
-                                        is CompressTask -> tab.toggleCompressTaskDialog(task)
+                                // Paused Tasks
+                                if (pausedTasks.isNotEmpty()) {
+                                    item {
+                                        TaskCategoryHeader(
+                                            title = stringResource(R.string.tasks_paused),
+                                            count = pausedTasks.size,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                    items(
+                                        pausedTasks.sortedBy { it.metadata.creationTime }.reversed(),
+                                        key = { "paused-${it.id}" }) { task ->
+                                        SwipeableTaskItem(
+                                            task = task,
+                                            icon = Icons.Default.Pause,
+                                            iconTint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            onSwipeToDelete = {
+                                                pausedTasks.remove(task)
+                                                globalClass.taskManager.removeTask(task.id)
+                                                removeBackgroundTask(context, task.id)
+                                            },
+                                            onClick = {
+                                                globalClass.taskManager.continueTask(task.id)
+                                                tab.toggleTasksPanel(false)
+                                            }
+                                        )
+                                    }
+                                    item { Space(8.dp) }
+                                }
+
+                                // Failed Tasks
+                                if (failedTasks.isNotEmpty()) {
+                                    item {
+                                        TaskCategoryHeader(
+                                            title = stringResource(R.string.tasks_failed),
+                                            count = failedTasks.size,
+                                            color = MaterialTheme.colorScheme.error
+                                        )
+                                    }
+                                    items(
+                                        failedTasks.sortedBy { it.metadata.creationTime }.reversed(),
+                                        key = { "failed-${it.id}" }) { task ->
+                                        SwipeableTaskItem(
+                                            task = task,
+                                            icon = Icons.Default.ErrorOutline,
+                                            iconTint = MaterialTheme.colorScheme.error,
+                                            onSwipeToDelete = {
+                                                failedTasks.remove(task)
+                                                globalClass.taskManager.removeTask(task.id)
+                                                removeBackgroundTask(context, task.id)
+                                            },
+                                            onClick = {
+                                                globalClass.taskManager.continueTask(task.id)
+                                                tab.toggleTasksPanel(false)
+                                            }
+                                        )
+                                    }
+                                    item { Space(8.dp) }
+                                }
+
+                                // Pending Tasks
+                                if (pendingTasks.isNotEmpty()) {
+                                    item {
+                                        TaskCategoryHeader(
+                                            title = stringResource(R.string.tasks_pending),
+                                            count = pendingTasks.size,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                    items(
+                                        pendingTasks.sortedBy { it.metadata.creationTime }.reversed(),
+                                        key = { "pending-${it.id}" }) { task ->
+                                        val conversion = task as? ConversionTask
+                                        val sourceNames = conversion?.sourceContent?.take(3)?.joinToString("\n") { it.displayName }.orEmpty()
+                                        val preview = if (conversion != null) {
+                                            val names = if (conversion.sourceContent.size > 3) {
+                                                stringResource(R.string.conversion_pending_more, sourceNames, conversion.sourceContent.size - 3)
+                                            } else sourceNames
+                                            stringResource(R.string.conversion_pending_sources, names)
+                                        } else null
+                                        val localDestination = (tab.activeFolder as? LocalFileHolder)?.file
+                                        val canRunHere = localDestination != null && localDestination.isDirectory && localDestination.canWrite()
+                                        val actionHint = if (conversion != null) {
+                                            if (canRunHere) {
+                                                stringResource(R.string.conversion_run_here, localDestination!!.absolutePath)
+                                            } else stringResource(R.string.conversion_pending_destination)
+                                        } else null
+                                        SwipeableTaskItem(
+                                            task = task,
+                                            icon = Icons.Default.HourglassEmpty,
+                                            iconTint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            preview = preview,
+                                            actionHint = actionHint,
+                                            actionEnabled = canRunHere,
+                                            onSwipeToDelete = {
+                                                pendingTasks.remove(task)
+                                                globalClass.taskManager.removeTask(task.id)
+                                            },
+                                            onClick = {
+                                                if (task is ConversionTask) {
+                                                    val currentDestination = (tab.activeFolder as? LocalFileHolder)?.file
+                                                    if (currentDestination == null || !currentDestination.isDirectory || !currentDestination.canWrite()) {
+                                                        globalClass.showMsg(globalClass.getString(R.string.conversion_pending_destination))
+                                                        return@SwipeableTaskItem
+                                                    }
+                                                    globalClass.taskManager.runTask(task.id, ConversionTaskParameters(currentDestination.absolutePath))
+                                                    tab.toggleTasksPanel(false)
+                                                    return@SwipeableTaskItem
+                                                }
+                                                if (tab.activeFolder is VirtualFileHolder || tab !is FilesTab) {
+                                                    globalClass.showMsg(globalClass.getString(R.string.can_not_run_tasks))
+                                                    return@SwipeableTaskItem
+                                                }
+                                                tab.toggleTasksPanel(false)
+                                                when (task) {
+                                                    is CopyTask -> {
+                                                        globalClass.taskManager.runTask(
+                                                            task.id,
+                                                            CopyTaskParameters(tab.activeFolder)
+                                                        )
+                                                    }
+
+                                                    is CompressTask -> tab.toggleCompressTaskDialog(task)
+                                                }
+                                            }
+                                        )
+                                    }
+                                    item { Space(8.dp) }
+                                }
+
+                                // Invalid Tasks
+                                if (invalidTasks.isNotEmpty()) {
+                                    item {
+                                        TaskCategoryHeader(
+                                            title = stringResource(R.string.tasks_invalid),
+                                            count = invalidTasks.size,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                    items(
+                                        invalidTasks.sortedBy { it.metadata.creationTime }.reversed(),
+                                        key = { "invalid-${it.id}" }) { task ->
+                                        SwipeableTaskItem(
+                                            task = task,
+                                            icon = Icons.Default.Warning,
+                                            iconTint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            onSwipeToDelete = {
+                                                invalidTasks.remove(task)
+                                                globalClass.taskManager.removeTask(task.id)
+                                            },
+                                            onClick = { }
+                                        )
                                     }
                                 }
-                            )
-                        }
-                        item { Space(8.dp) }
-                    }
 
-                    // Invalid Tasks
-                    if (invalidTasks.isNotEmpty()) {
-                        item {
-                            TaskCategoryHeader(
-                                title = stringResource(R.string.tasks_invalid),
-                                count = invalidTasks.size,
-                                color = MaterialTheme.colorScheme.outline
-                            )
+                                if (completedTasks.isNotEmpty()) {
+                                    item {
+                                        TaskCategoryHeader(
+                                            title = stringResource(R.string.completed),
+                                            count = completedTasks.size,
+                                            color = MaterialTheme.colorScheme.primary
+                                        )
+                                    }
+                                    item {
+                                        Text(stringResource(R.string.task_ui_completed_hint),
+                                            modifier = Modifier.padding(horizontal = 8.dp),
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    }
+                                    items(completedTasks, key = { "completed-${it.id}" }) { task ->
+                                        SwipeableTaskItem(
+                                            task = task,
+                                            icon = Icons.Rounded.TaskAlt,
+                                            iconTint = MaterialTheme.colorScheme.primary,
+                                            onSwipeToDelete = {
+                                                completedTasks.remove(task)
+                                                globalClass.taskManager.removeTask(task.id)
+                                            },
+                                            onClick = { detailsTask = task }
+                                        )
+                                    }
+                                }
+                            }
                         }
-                        items(
-                            invalidTasks.sortedBy { it.metadata.creationTime }.reversed(),
-                            key = { "invalid-${it.id}" }) { task ->
-                            SwipeableTaskItem(
-                                task = task,
-                                icon = Icons.Default.Warning,
-                                iconTint = MaterialTheme.colorScheme.outline,
-                                onSwipeToDelete = {
-                                    invalidTasks.remove(task)
-                                    globalClass.taskManager.removeTask(task.id)
-                                },
-                                onClick = { }
-                            )
+
+                        AnimatedVisibility(
+                            visible = runningTasks.isEmpty() && pausedTasks.isEmpty() &&
+                                    failedTasks.isEmpty() && pendingTasks.isEmpty() && invalidTasks.isEmpty() && completedTasks.isEmpty()
+                        ) {
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 40.dp, horizontal = 32.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Rounded.Task,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.size(48.dp)
+                                )
+                                Space(16.dp)
+                                Text(
+                                    text = stringResource(R.string.empty),
+                                    style = MaterialTheme.typography.titleLarge,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    textAlign = TextAlign.Center
+                                )
+                                Space(8.dp)
+                                Text(
+                                    text = stringResource(R.string.no_tasks_available),
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    textAlign = TextAlign.Center
+                                )
+                            }
                         }
                     }
                 }
             }
 
-            AnimatedVisibility(
-                visible = runningTasks.isEmpty() && pausedTasks.isEmpty() &&
-                        failedTasks.isEmpty() && pendingTasks.isEmpty() && invalidTasks.isEmpty()
-            ) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(vertical = 64.dp, horizontal = 32.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally
-                ) {
-                    Icon(
-                        imageVector = Icons.Rounded.Task,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.outline,
-                        modifier = Modifier.size(48.dp)
-                    )
-                    Space(16.dp)
-                    Text(
-                        text = stringResource(R.string.empty),
-                        style = MaterialTheme.typography.headlineSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        textAlign = TextAlign.Center
-                    )
-                    Space(8.dp)
-                    Text(
-                        text = stringResource(R.string.no_tasks_available),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.outline,
-                        textAlign = TextAlign.Center
-                    )
-                }
+            detailsTask?.let { task ->
+                AlertDialog(
+                    onDismissRequest = { detailsTask = null },
+                    shape = RoundedCornerShape(28.dp),
+                    containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                    icon = { Icon(Icons.Rounded.TaskAlt, null, tint = MaterialTheme.colorScheme.primary) },
+                    title = { Text(task.metadata.title, style = MaterialTheme.typography.titleLarge) },
+                    text = {
+                        SelectionContainer {
+                            Column(
+                                Modifier.fillMaxWidth()
+                                    .heightIn(max = (LocalConfiguration.current.screenHeightDp * .55f).dp)
+                                    .verticalScroll(rememberScrollState()),
+                                verticalArrangement = Arrangement.spacedBy(12.dp)
+                            ) {
+                                if (task.metadata.subtitle.isNotBlank()) Text(task.metadata.subtitle,
+                                    style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Surface(shape = RoundedCornerShape(20.dp), color = MaterialTheme.colorScheme.surfaceContainerLow) {
+                                    Text(task.progressMonitor.summary.ifBlank { task.metadata.displayDetails },
+                                        modifier = Modifier.padding(16.dp), style = MaterialTheme.typography.bodyMedium,
+                                        color = MaterialTheme.colorScheme.onSurface)
+                                }
+                            }
+                        }
+                    },
+                    confirmButton = {
+                        TextButton(onClick = { detailsTask = null }, modifier = Modifier.defaultMinSize(minHeight = 48.dp)) {
+                            Text(stringResource(R.string.close))
+                        }
+                    }
+                )
             }
         }
+    }
+}
+
+/** Task state changes on a service thread; copy its collection while holding its monitor. */
+private fun refreshTaskList(target: MutableList<Task>, source: MutableCollection<Task>) {
+    val snapshot = synchronized(source) { source.toList() }
+    if (target != snapshot) {
+        target.clear()
+        target.addAll(snapshot)
     }
 }
 
@@ -362,198 +471,82 @@ private fun TaskCategoryHeader(
     count: Int,
     color: Color
 ) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(
-            containerColor = color.copy(alpha = 0.1f)
-        ),
-        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically
     ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 12.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Box(
-                modifier = Modifier
-                    .size(8.dp)
-                    .background(color, shape = RoundedCornerShape(50))
-            )
-            Space(12.dp)
-            Text(
-                text = title,
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.SemiBold,
-                color = MaterialTheme.colorScheme.onSurface,
-                modifier = Modifier.weight(1f)
-            )
-            Surface(
-                shape = RoundedCornerShape(12.dp),
-                color = color.copy(alpha = 0.2f)
-            ) {
-                Text(
-                    text = count.toString(),
-                    style = MaterialTheme.typography.labelMedium,
-                    color = color,
-                    fontWeight = FontWeight.Medium,
-                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
-                )
-            }
+        Text(title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold,
+            color = color, modifier = Modifier.weight(1f))
+        Surface(shape = RoundedCornerShape(8.dp), color = MaterialTheme.colorScheme.surfaceContainerHigh) {
+            Text(count.toString(), style = MaterialTheme.typography.labelMedium, color = color,
+                modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp))
         }
     }
 }
 
 @Composable
-private fun RunningTaskItem(
-    task: Task,
-    onClick: () -> Unit
-) {
-    val job = remember { SupervisorJob() }
-    val scope = remember { CoroutineScope(Dispatchers.IO + job) }
-
+private fun RunningTaskItem(task: Task, onClick: () -> Unit) {
     var progress by remember(task.id) { mutableFloatStateOf(task.progressMonitor.progress) }
     var processName by remember(task.id) { mutableStateOf(task.progressMonitor.processName) }
     var contentName by remember(task.id) { mutableStateOf(task.progressMonitor.contentName) }
     var totalContent by remember(task.id) { mutableIntStateOf(task.progressMonitor.totalContent) }
     var remainingContent by remember(task.id) { mutableIntStateOf(task.progressMonitor.remainingContent) }
 
-    DisposableEffect(task.id) {
-        scope.launch {
-            while (true) {
-                progress = task.progressMonitor.progress
-                processName = task.progressMonitor.processName
-                contentName = task.progressMonitor.contentName
-                totalContent = task.progressMonitor.totalContent
-                remainingContent = task.progressMonitor.remainingContent
-                delay(100)
-            }
-        }
-
-        onDispose {
-            job.cancel()
+    LaunchedEffect(task.id) {
+        while (true) {
+            progress = task.progressMonitor.progress
+            processName = task.progressMonitor.processName
+            contentName = task.progressMonitor.contentName
+            totalContent = task.progressMonitor.totalContent
+            remainingContent = task.progressMonitor.remainingContent
+            delay(100)
         }
     }
-
+    val fraction = progress.coerceIn(0f, 1f)
     Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable { onClick() },
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
-        ),
-        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
+        modifier = Modifier.fillMaxWidth().clickable(onClick = onClick),
+        shape = RoundedCornerShape(24.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh)
     ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            CircularProgressIndicator(
-                modifier = Modifier.size(20.dp),
-                strokeWidth = 2.dp,
-                color = MaterialTheme.colorScheme.primary
-            )
-            Space(16.dp)
-            Column(modifier = Modifier.weight(1f)) {
-                if (processName.isNotEmpty()) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            text = processName,
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.weight(1f, fill = false)
-                        )
-                        if (contentName.isNotEmpty()) {
-                            Text(
-                                text = " - $contentName",
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.primary,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                                modifier = Modifier.weight(1f)
-                            )
-                        }
+        Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                Surface(shape = RoundedCornerShape(14.dp), color = MaterialTheme.colorScheme.primaryContainer) {
+                    Box(Modifier.size(40.dp), contentAlignment = Alignment.Center) {
+                        CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer)
                     }
                 }
-                if (progress > 0) {
-                    Column(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        LinearProgressIndicator(
-                            progress = { progress },
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(8.dp)
-                                .clip(RoundedCornerShape(4.dp)),
-                            color = MaterialTheme.colorScheme.primary,
-                            trackColor = MaterialTheme.colorScheme.primaryContainer
-                        )
-
-                        // Progress Info Row
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            // Content Counter
-                            if (totalContent > 0) {
-                                Text(
-                                    text = "${
-                                        max(
-                                            totalContent - remainingContent,
-                                            0
-                                        )
-                                    }/${totalContent}",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-
-                            // Percentage
-                            Text(
-                                text = "${(progress * 100).toInt()}%",
-                                style = MaterialTheme.typography.bodyMedium,
-                                fontWeight = FontWeight.Medium,
-                                color = MaterialTheme.colorScheme.primary
-                            )
-                        }
-                    }
-                } else {
-                    // Indeterminate progress
-                    Column(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        LinearProgressIndicator(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(8.dp)
-                                .clip(RoundedCornerShape(4.dp)),
-                            color = MaterialTheme.colorScheme.primary,
-                            trackColor = MaterialTheme.colorScheme.primaryContainer
-                        )
-
-                        if (totalContent > 0) {
-                            Text(
-                                text = "${totalContent - remainingContent}/${totalContent}",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.align(Alignment.Start)
-                            )
-                        }
-                    }
+                Text(task.metadata.title, modifier = Modifier.weight(1f), style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Medium)
+                if (fraction > 0f) {
+                    Text(stringResource(R.string.task_ui_progress_percent, (fraction * 100).toInt()),
+                        style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
                 }
+            }
+            if (processName.isNotBlank()) {
+                Text(processName, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            if (contentName.isNotBlank()) {
+                Text(contentName, style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            }
+            val indicatorModifier = Modifier.fillMaxWidth().height(6.dp).clip(RoundedCornerShape(3.dp))
+            if (fraction > 0f) {
+                LinearProgressIndicator(progress = { fraction }, modifier = indicatorModifier,
+                    color = MaterialTheme.colorScheme.primary, trackColor = MaterialTheme.colorScheme.surfaceContainerHighest)
+            } else {
+                LinearProgressIndicator(modifier = indicatorModifier, color = MaterialTheme.colorScheme.primary,
+                    trackColor = MaterialTheme.colorScheme.surfaceContainerHighest)
+            }
+            if (totalContent > 0) {
+                Text(stringResource(R.string.task_ui_progress_count,
+                    (totalContent - remainingContent).coerceIn(0, totalContent), totalContent),
+                    style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
     }
 }
-
 @OptIn(ExperimentalMaterialApi::class, ExperimentalFoundationApi::class)
 @Composable
 private fun SwipeableTaskItem(
@@ -561,12 +554,16 @@ private fun SwipeableTaskItem(
     icon: ImageVector,
     iconTint: Color,
     onSwipeToDelete: () -> Unit,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    preview: String? = null,
+    actionHint: String? = null,
+    actionEnabled: Boolean = true
 ) {
     val coroutineScope = rememberCoroutineScope()
     SwipeBox(
         modifier = Modifier
             .fillMaxWidth()
+            .clip(RoundedCornerShape(24.dp))
             .animateContentSize(),
         swipeDirection = SwipeDirection.EndToStart,
         endContentWidth = 72.dp,
@@ -577,7 +574,7 @@ private fun SwipeableTaskItem(
                     .width(72.dp)
                     .background(
                         MaterialTheme.colorScheme.errorContainer,
-                        shape = RoundedCornerShape(topEnd = 12.dp, bottomEnd = 12.dp)
+                        shape = RoundedCornerShape(topEnd = 24.dp, bottomEnd = 24.dp)
                     )
                     .clickable {
                         onSwipeToDelete()
@@ -598,7 +595,10 @@ private fun SwipeableTaskItem(
             task = task,
             icon = icon,
             iconTint = iconTint,
-            onClick = onClick
+            onClick = onClick,
+            preview = preview,
+            actionHint = actionHint,
+            actionEnabled = actionEnabled
         )
     }
 }
@@ -609,9 +609,12 @@ private fun TaskItem(
     task: Task,
     icon: ImageVector,
     iconTint: Color,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    preview: String? = null,
+    actionHint: String? = null,
+    actionEnabled: Boolean = true
 ) {
-    var expanded by remember { mutableStateOf(false) }
+    var expanded by remember(task.id) { mutableStateOf(false) }
 
     Card(
         modifier = Modifier
@@ -623,72 +626,63 @@ private fun TaskItem(
                 }
             )
             .animateContentSize(),
+        shape = RoundedCornerShape(24.dp),
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surface
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
         ),
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
     ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp),
-            verticalAlignment = Alignment.CenterVertically
+        Column(
+            modifier = Modifier.fillMaxWidth().padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            Surface(
-                shape = RoundedCornerShape(8.dp),
-                color = iconTint.copy(alpha = 0.1f),
-                modifier = Modifier.size(40.dp)
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalAlignment = Alignment.Top
             ) {
-                Box(
-                    contentAlignment = Alignment.Center
+                Surface(
+                    shape = RoundedCornerShape(14.dp),
+                    color = MaterialTheme.colorScheme.surfaceContainerLow,
+                    modifier = Modifier.size(40.dp)
                 ) {
-                    Icon(
-                        imageVector = icon,
-                        contentDescription = null,
-                        tint = iconTint,
-                        modifier = Modifier.size(20.dp)
-                    )
-                }
-            }
-
-            Space(16.dp)
-
-            Column(
-                modifier = Modifier.weight(1f)
-            ) {
-                Text(
-                    text = task.metadata.title,
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    fontWeight = FontWeight.Medium,
-                )
-                if (task.metadata.subtitle.isNotBlank()) {
-                    Space(4.dp)
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(
-                            modifier = Modifier.weight(1f),
-                            text = task.metadata.subtitle,
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                        Text(
-                            text = task.metadata.creationTime,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(icon, null, tint = iconTint, modifier = Modifier.size(20.dp))
                     }
                 }
-                AnimatedVisibility(
-                    visible = expanded,
-                    enter = scaleIn() + slideInVertically { -it },
-                    exit = scaleOut(targetScale = 0.5f) + slideOutVertically { -it / 4 } + fadeOut()
-                ) {
-                    Text(
-                        text = task.progressMonitor.summary.ifEmpty { task.metadata.displayDetails },
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
-                        maxLines = Int.MAX_VALUE
-                    )
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                    Text(task.metadata.title, style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Medium)
+                    if (task.metadata.subtitle.isNotBlank()) {
+                        Text(task.metadata.subtitle, style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    Text(task.metadata.creationTime, style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+            if (!preview.isNullOrBlank()) {
+                Surface(shape = RoundedCornerShape(16.dp), color = MaterialTheme.colorScheme.surfaceContainerLow,
+                    modifier = Modifier.fillMaxWidth()) {
+                    Text(preview, modifier = Modifier.padding(12.dp), style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 5, overflow = TextOverflow.Ellipsis)
+                }
+            }
+            if (!actionHint.isNullOrBlank()) {
+                Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Rounded.FolderOpen, null, modifier = Modifier.size(20.dp),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(actionHint, modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    FilledTonalIconButton(onClick = onClick, enabled = actionEnabled, modifier = Modifier.size(48.dp)) {
+                        Icon(Icons.Rounded.PlayArrow, stringResource(R.string.task_ui_run_here))
+                    }
+                }
+            }
+            AnimatedVisibility(visible = expanded) {
+                SelectionContainer {
+                    Text(task.progressMonitor.summary.ifEmpty { task.metadata.displayDetails },
+                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
         }

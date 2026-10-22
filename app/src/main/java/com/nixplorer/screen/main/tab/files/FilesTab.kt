@@ -96,6 +96,9 @@ class FilesTab(
     // Holds the file that has been long-clicked
     var targetFile: ContentHolder? = null
     var compressTaskHolder: CompressTask? = null
+    // Snapshot the conversion input before the options menu closes or selection changes.
+    var conversionSources: List<LocalFileHolder> = emptyList()
+        private set
 
     // Used to detect changes to an already updated ZipTree in ZipManager
     var zipSourceTimestamp = -1L
@@ -778,6 +781,16 @@ class FilesTab(
         } else {
             _dialogsState.update { it.copy(showNewZipFileDialog = false) }
         }
+    }
+
+    fun showConversionDialog(files: List<LocalFileHolder>) {
+        conversionSources = files.filter { it.file.isFile && it.file.canRead() }.toList()
+        _dialogsState.update { it.copy(showConversionDialog = conversionSources.isNotEmpty()) }
+    }
+
+    fun dismissConversionDialog() {
+        _dialogsState.update { it.copy(showConversionDialog = false) }
+        conversionSources = emptyList()
     }
 
     fun toggleBookmarksDialog(show: Boolean) {

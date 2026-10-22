@@ -21,6 +21,7 @@ import com.nixplorer.screen.main.tab.files.ui.dialog.BookmarksDialog
 import com.nixplorer.screen.main.tab.files.ui.dialog.CreateNewFileDialog
 import com.nixplorer.screen.main.tab.files.ui.dialog.DeleteConfirmationDialog
 import com.nixplorer.screen.main.tab.files.ui.dialog.FileCompressionDialog
+import com.nixplorer.screen.main.tab.files.ui.dialog.FileConversionDialog
 import com.nixplorer.screen.main.tab.files.ui.dialog.FileOptionsMenuDialog
 import com.nixplorer.screen.main.tab.files.ui.dialog.FilePropertiesDialog
 import com.nixplorer.screen.main.tab.files.ui.dialog.FileSortingMenuDialog
@@ -158,6 +159,12 @@ fun Dialogs(tab: FilesTab) {
         show = dialogsState.value.showNewZipFileDialog && tab.compressTaskHolder != null,
         tab = tab,
         onDismissRequest = { tab.toggleCompressTaskDialog(null) }
+    )
+
+    FileConversionDialog(
+        show = dialogsState.value.showConversionDialog,
+        tab = tab,
+        onDismissRequest = tab::dismissConversionDialog
     )
 
     FileOptionsMenuDialog(
