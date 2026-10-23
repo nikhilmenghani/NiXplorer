@@ -1,6 +1,7 @@
 package com.nixplorer.screen.main.tab.files
 
 import android.app.PendingIntent
+import android.content.ClipData
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ShortcutInfo
@@ -693,22 +694,20 @@ class FilesTab(
             }
         }
 
-        val builder = ShareCompat.IntentBuilder(globalClass)
-            .setType(if (uris.size == 1) uris[0].getMimeType(globalClass) else anyFileType)
-        uris.forEach {
-            builder.addStream(it)
-        }
-
-        context.startActivity(
-            builder.intent.apply {
-                if (uris.size > 1) action = Intent.ACTION_SEND_MULTIPLE
-
-                addFlags(
-                    Intent.FLAG_GRANT_READ_URI_PERMISSION
-                            or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
-                )
+        if (uris.isEmpty()) return
+        val builder = ShareCompat.IntentBuilder(context)
+            .setType(if (uris.size == 1) uris[0].getMimeType(context) else anyFileType)
+        uris.forEach { builder.addStream(it) }
+        val send = builder.intent.apply {
+            action = if (uris.size > 1) Intent.ACTION_SEND_MULTIPLE else Intent.ACTION_SEND
+            clipData = ClipData.newRawUri("Shared files", uris.first()).apply {
+                uris.drop(1).forEach { addItem(ClipData.Item(it)) }
             }
-        )
+            flags = (flags and Intent.FLAG_GRANT_WRITE_URI_PERMISSION.inv()) or
+                Intent.FLAG_GRANT_READ_URI_PERMISSION
+        }
+        // The system Sharesheet supplies profile tabs and forwards URI grants.
+        context.startActivity(Intent.createChooser(send, null))
     }
 
     fun addToHomeScreen(context: Context, file: LocalFileHolder) {

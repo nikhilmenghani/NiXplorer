@@ -82,7 +82,7 @@ fun VideoPlayerScreen(
     val playerState by videoPlayerInstance.playerState.collectAsState()
     val view = LocalView.current
     var touchingControls by remember { mutableStateOf(false) }
-    val zoomState = rememberZoomState(maxScale = 20f)
+    val zoomState = rememberZoomState(maxScale = 50f)
     var gestureFeedback by remember(videoUri) { mutableStateOf<Pair<Boolean, Float>?>(null) }
     val levelGestures = videoLevelGestures(enabled = { zoomState.scale <= 1f }) { gestureFeedback = it }
     LaunchedEffect(gestureFeedback) {
