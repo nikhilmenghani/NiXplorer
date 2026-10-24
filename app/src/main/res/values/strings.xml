@@ -590,4 +590,10 @@
     <string name="show_in_gallery">Show in gallery</string>
     <string name="gallery_visibility_updated">Updated. Your gallery may take time to refresh; parent folder visibility still applies.</string>
     <string name="gallery_visibility_failed">Could not update .nomedia. Check folder access and make sure .nomedia is a regular file.</string>
+    <string name="save_to_nixplorer">Save to NiXplorer</string>
+    <string name="save_here">Save here</string>
+    <string name="save_shared_count">%1$d of %2$d files saved</string>
+    <string name="save_shared_invalid">No readable file attachments were shared. Share files rather than text or links.</string>
+    <string name="save_shared_cancelled">Stopped. Completed files were kept; tap Save here to retry remaining files.</string>
+    <string name="save_shared_access_error">Cannot read this folder. Check storage access.</string>
 </resources>

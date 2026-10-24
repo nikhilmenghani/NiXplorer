@@ -27,6 +27,7 @@ class OperationSafetyInstrumentation : Instrumentation() {
     override fun onStart() {
         // Custom instrumentation may start before Application.onCreate has returned on the main thread.
         runOnMainSync { check(globalClass === targetContext.applicationContext) }
+        if (phase == "saveShared") { SaveSharedFixtureChecks(this).run(); return }
         if (phase == "conversion") { ConversionFixtureChecks(this).run(); return }
         if (phase == "pdfEditor") { PdfEditorFixtureChecks(this).run(); return }
         if (phase == "smartSearchDeviceQuery") { smartSearchDeviceQuery(); return }

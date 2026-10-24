@@ -39,6 +39,15 @@
         android:theme="@style/Theme.FileExplorer"
         tools:targetApi="34" >
 
+        <activity android:name=".screen.share.SaveSharedFilesActivity"
+            android:exported="true" android:label="@string/save_to_nixplorer">
+            <intent-filter android:label="@string/save_to_nixplorer">
+                <action android:name="android.intent.action.SEND" />
+                <action android:name="android.intent.action.SEND_MULTIPLE" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="*/*" />
+            </intent-filter>
+        </activity>
         <activity android:name=".screen.storage.StorageAnalyzerActivity" android:exported="false" />
         <activity android:name=".screen.storage.EmptyFoldersActivity" android:exported="false" />
         <activity android:name=".screen.archive.ArchiveOpenActivity" android:exported="true" android:label="${appLabel}">
